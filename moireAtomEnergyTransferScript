@@ -1,0 +1,42 @@
+#%%
+import numpy as np
+import moireAtomEnergyTransferModule as met
+
+material = 'MoS2'
+theta = 2
+modStrengthFactor = 1
+nu = 4
+N = 7 # cuts off number of energy levels beyond ground state(note that this is NOT equivalent to the number of states since the levels are degenerate)
+numEStatesIncluded = 5
+Gamma0 = 1  # 5 #mev, line broadening factor
+TMin = 30
+TMax = 1000 # * theta
+numTVals = 100 #70
+muOfTPrecision = 0.01
+
+cutoff = 0.05
+
+epsilonPerp = 3.76
+epsilonPar = 6.93
+epsilonEff = np.sqrt(epsilonPar*epsilonPerp)
+epsilonEffD = np.sqrt(epsilonPar/epsilonPerp)
+dielectricConstant = epsilonEff
+
+epsForED = dielectricConstant
+epsForEnergyTransfer = dielectricConstant
+
+computeGLineCutinTFromScratch = True
+computeGLineCutindFromScratch = False
+computeGLineCutinsFromScratch = False
+
+dMin = 0
+dMax = 0
+numdVals = 1
+
+sMin = 0
+sMax = 0
+numsVals=1
+
+met.computeLineCutInT(material, theta, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0)
+print('done')
+# %%
