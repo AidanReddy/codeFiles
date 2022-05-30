@@ -1,9 +1,10 @@
 #%%
 import numpy as np
 import moireAtomEnergyTransferModule as met
+import plotModule as pm
 
 material = 'MoS2'
-theta = 2
+theta = 3
 modStrengthFactor = 1
 nu = 4
 N = 7 # cuts off number of energy levels beyond ground state(note that this is NOT equivalent to the number of states since the levels are degenerate)
@@ -37,6 +38,13 @@ sMin = 0
 sMax = 0
 numsVals=1
 
-met.computeLineCutInT(material, theta, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0)
-print('done')
+GLineCutInTofdands = met.computeLineCutInT(material, theta, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0)
+
+print('shape:', np.shape(GLineCutInTofdands))
+dIndex = 0
+sIndex=0
+TVals = np.linspace(TMin, TMax, numTVals)
+pm.produceSingleMoireAtomGLineCutInTPlot(GLineCutInTofdands[1,dIndex,sIndex], TVals, theta, 0)
+
+
 # %%

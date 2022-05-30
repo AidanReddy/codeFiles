@@ -6,7 +6,6 @@ from numba import njit
 import timeit
 from datetime import date
 
-from sklearn import model_selection
 today = date.today()
 date = today.strftime("%b%d%Y")
 
@@ -115,7 +114,7 @@ def computeDetailedBalance(eStateEnergy, eStatePrimeEnergy, beta1, beta2, Z1, Z2
 @njit
 def MuTtoN(mu, nu, T, energyValsFock1, energyValsFock2, Es_s, Es_a, ESingleParticle_s, ESingleParticle_a):
     n = 0
-    print('T:', T)
+    #print('T:', T)
     beta = 1/(Kb*T)
     Z = computePartitionFunction(nu, beta, mu, Es_s, Es_a, ESingleParticle_s, ESingleParticle_a)
     for energyValFock1 in energyValsFock1:
@@ -132,7 +131,7 @@ def computeMuOfTVector(TVals, hbaromega, n, nu, muOfTPrecision, ESingleParticle_
     MuOfTVector = np.zeros(numTVals)
     trialMu = 1*hbaromega
     for TIndex, T in np.ndenumerate(TVals):
-        print('TIndex:', TIndex)
+        #print('TIndex:', TIndex)
         nFound = False
         trialn=100 #dummy value whose only important property is being > 1
         while nFound == False:
@@ -547,7 +546,7 @@ def computeLineCutInT(material, theta, nu, modStrengthFactor, N, numEStatesInclu
         stop = timeit.default_timer()
         print('time for muOfTVector1:', stop - start)
         plt.plot(Kb*TLineCutVals/hbaromega, (muOfTVector1/hbaromega))
-        muOfTVector2 = computeMuOfTVector(T1T2Vals[:,1], hbaromega, 1, nu, muOfTPrecision, ESingleParticle_s, ESingleParticle_a, Es_s, Es_a) #might be unnecessary to calculate different muoft vectors for the two cases because they are so similiar anyway
+        muOfTVector2 = muOfTVector1 #computeMuOfTVector(T1T2Vals[:,1], hbaromega, 1, nu, muOfTPrecision, ESingleParticle_s, ESingleParticle_a, Es_s, Es_a) #might be unnecessary to calculate different muoft vectors for the two cases because they are so similiar anyway
         for i in range(np.shape(Z1Z2Vals)[0]):
             T1 = T1T2Vals[i,0]
             T2 = T1T2Vals[i,1]
@@ -568,6 +567,7 @@ def computeLineCutInT(material, theta, nu, modStrengthFactor, N, numEStatesInclu
         stop = timeit.default_timer()
         print('Time for GLineCutInT: ', stop - start)
         np.save(dataSaveDir+'GLineCutInTofdandsNu2%stheta=%sMod=%dEpsilonED=%ddMin=%ddMax=%dnumdVals=%dsMin=%dsMax=%dnumsVals=%dN=%dIncluded=%dTMin=%dTMax=%dnumTVals=%dGamma0=%d' % (date, theta, modStrengthFactor, epsForED, np.min(dVals), np.max(dVals), np.shape(dVals)[0],np.min(sVals), np.max(sVals), np.shape(sVals)[0], N, numEStatesIncluded, TMin, TMax, numTVals, Gamma0), GLineCutInTofdandsNu2)
+        return(GLineCutInTofdandsNu2)
     if nu == 4:
         for i in range(np.shape(Z1Z2Vals)[0]):
             T1 = T1T2Vals[i,0]
@@ -612,6 +612,7 @@ def computeLineCutInT(material, theta, nu, modStrengthFactor, N, numEStatesInclu
         GLineCutInTofdandsInteractingandSingleParticle = np.stack((GLineCutInTofdands,GLineCutInTofdandsNoninteracting))
         GLineCutInTofdandsInteractingandSingleParticleSaveName = str(dataSaveDir+'GLineCutInTofdandsInteractingandSingleParticle%stheta=%sMod=%dEpsilonED=%ddMin=%ddMax=%dnumdVals=%dsMin=%dsMax=%dnumsVals=%dN=%dIncluded=%dTMin=%dTMax=%dnumTVals=%dGamma0=%d' % (date, theta, modStrengthFactor, epsForED, np.min(dVals), np.max(dVals), np.shape(dVals)[0],np.min(sVals), np.max(sVals), np.shape(sVals)[0], N, numEStatesIncluded, TMin, TMax, numTVals, Gamma0))
         np.save(GLineCutInTofdandsInteractingandSingleParticleSaveName, GLineCutInTofdandsInteractingandSingleParticle)
+        return(GLineCutInTofdandsInteractingandSingleParticle)
 """  
 if computeGLineCutindFromScratch == True:
     #dLine cut

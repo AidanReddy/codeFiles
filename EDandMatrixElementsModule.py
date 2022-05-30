@@ -82,11 +82,12 @@ def factorial(n): #a factorial function with floating number output, to avoid nu
     return x
 
 @numba.jit()
-def Coul_hh(omgh,nRpi,nRmi,nrpi,nrmi,nRpj,nRmj,nrpj,nrmj, mStar, dielectricConstant):
+def Coul_hh(omgh,nRpi,nRmi,nrpi,nrmi,nRpj,nRmj,nrpj,nrmj, mStar, dielectricConstant): #this is for two holes on the same quantum dot
     #h-h Coulomb matrix element, two holes distinguishable
     #<nRpi,nRmi;nrpi,nrmi|V_hh|nRpj,nRmj;nrpj,nrmj>
     nsum = nrpj+nrmj+nrmi+nrpi
     dl = (nrpj-nrmj)-(nrpi-nrmi)
+    deltaNr = (nrpj+nrmj)-(nrpi+nrmi)
     if dl!=0 or nRpi != nRpj or nRmi != nRmj:
         return 0 #angular momentum conservation
     Srp = 0
@@ -102,7 +103,8 @@ def Coul_hh(omgh,nRpi,nRmi,nrpi,nrmi,nRpj,nRmj,nrpj,nrmj, mStar, dielectricConst
         arp *= -1*(nrpi-krp)*(nrpj-krp)/(krp+1)
     L = sqrt(hbar**2/(omgh*mStar*electronMass))
     E0 = eSquaredOvere0/(dielectricConstant*L)
-    Vij = ((-1)**(nrpj+nrmj))*2*E0*Srp*sqrt(factorial(nrpi)*factorial(nrpj)*factorial(nrmi)*factorial(nrmj))
+    # note that ((-1)**(deltaNr/2)) = (1j)**(deltaNr) since deltaNr is necessarily even. I just code it here as the LHS of this equation to ensure that it is real for the diagonalization code.
+    Vij = Srp*sqrt(2)*E0*((-1)**(deltaNr/2))*((-1)**(nrpi+nrmi))*sqrt(factorial(nrpi)*factorial(nrpj)*factorial(nrmi)*factorial(nrmj))
     return Vij
 
 def Coul_hh_4body_generalSeparation(dTilde,sTilde,omgh,nRpAi,nRmAi,nrpAi,nrmAi,nRpAj,nRmAj,nrpAj,nrmAj,nRpBi,nRmBi,nrpBi,nrmBi,nRpBj,nRmBj,nrpBj,nrmBj,mStar,dielectricConstant):
@@ -162,7 +164,11 @@ def Coul_hh_4body_generalSeparation(dTilde,sTilde,omgh,nRpAi,nRmAi,nrpAi,nrmAi,n
         aRpA *= -1*(nRpAi-kRpA)*(nRpAj-kRpA)/(kRpA+1)
     L = sqrt(hbar**2/(omgh*mStar*electronMass))
     E0 = eSquaredOvere0/(dielectricConstant*L)
-    V =(2**(7/2))*E0*SRpA*sqrt(factorial(nrpAi)*factorial(nrpAj)*factorial(nrmAi)*factorial(nrmAj)*factorial(nrpBi)*factorial(nrpBj)*factorial(nrmBi)*factorial(nrmBj))*sqrt(factorial(nRpAi)*factorial(nRpAj)*factorial(nRmAi)*factorial(nRmAj)*factorial(nRpBi)*factorial(nRpBj)*factorial(nRmBi)*factorial(nRmBj))
+    deltaNRB = nRmBi + nRpBi - nRmBj - nRpBj
+    deltaNRA = nRmAi + nRpAi - nRmAj - nRpAj
+    deltaNrB = nrmBi + nrpBi - nrmBj - nrpBj
+    deltaNrA = nrmAi + nrpAi - nrmAj - nrpAj
+    V =SRpA*(2**(7/2))*E0*(-1)**(abs(deltaNRB)) * exp((1j*pi/2)*(deltaNRB+deltaNRA+deltaNrB+deltaNrA))*sqrt(factorial(nrpAi)*factorial(nrpAj)*factorial(nrmAi)*factorial(nrmAj)*factorial(nrpBi)*factorial(nrpBj)*factorial(nrmBi)*factorial(nrmBj))*sqrt(factorial(nRpAi)*factorial(nRpAj)*factorial(nRmAi)*factorial(nRmAj)*factorial(nRpBi)*factorial(nRpBj)*factorial(nRmBi)*factorial(nRmBj))
     return(V)
 
 def Coul_hh_4body_verticalSeparation(dTilde,omgh,nRpAi,nRmAi,nrpAi,nrmAi,nRpAj,nRmAj,nrpAj,nrmAj,nRpBi,nRmBi,nrpBi,nrmBi,nRpBj,nRmBj,nrpBj,nrmBj,mStar,dielectricConstant):
@@ -224,7 +230,11 @@ def Coul_hh_4body_verticalSeparation(dTilde,omgh,nRpAi,nRmAi,nrpAi,nrmAi,nRpAj,n
         aRpA *= -1*(nRpAi-kRpA)*(nRpAj-kRpA)/(kRpA+1)
     L = sqrt(hbar**2/(omgh*mStar*electronMass))
     E0 = eSquaredOvere0/(dielectricConstant*L)
-    V =(2**(7/2))*E0*SRpA*sqrt(factorial(nrpAi)*factorial(nrpAj)*factorial(nrmAi)*factorial(nrmAj)*factorial(nrpBi)*factorial(nrpBj)*factorial(nrmBi)*factorial(nrmBj))*sqrt(factorial(nRpAi)*factorial(nRpAj)*factorial(nRmAi)*factorial(nRmAj)*factorial(nRpBi)*factorial(nRpBj)*factorial(nRmBi)*factorial(nRmBj))
+    deltaNRB = nRmBi + nRpBi - nRmBj - nRpBj
+    deltaNRA = nRmAi + nRpAi - nRmAj - nRpAj
+    deltaNrB = nrmBi + nrpBi - nrmBj - nrpBj
+    deltaNrA = nrmAi + nrpAi - nrmAj - nrpAj
+    V =SRpA*(2**(7/2))*E0*(-1)**(abs(deltaNRB)) * exp((1j*pi/2)(deltaNRB+deltaNRA+deltaNrB+deltaNrA))*sqrt(factorial(nrpAi)*factorial(nrpAj)*factorial(nrmAi)*factorial(nrmAj)*factorial(nrpBi)*factorial(nrpBj)*factorial(nrmBi)*factorial(nrmBj))*sqrt(factorial(nRpAi)*factorial(nRpAj)*factorial(nRmAi)*factorial(nRmAj)*factorial(nRpBi)*factorial(nRpBj)*factorial(nRmBi)*factorial(nRmBj))
     return(V)
 
 def Coul_hh_4body_noSeparation(omgh,nRpAi,nRmAi,nrpAi,nrmAi,nRpAj,nRmAj,nrpAj,nrmAj,nRpBi,nRmBi,nrpBi,nrmBi,nRpBj,nRmBj,nrpBj,nrmBj,mStar,dielectricConstant):
@@ -280,7 +290,11 @@ def Coul_hh_4body_noSeparation(omgh,nRpAi,nRmAi,nrpAi,nrmAi,nRpAj,nRmAj,nrpAj,nr
         aRpA *= -1*(nRpAi-kRpA)*(nRpAj-kRpA)/(kRpA+1)
     L = sqrt(hbar**2/(omgh*mStar*electronMass))
     E0 = eSquaredOvere0/(dielectricConstant*L)
-    V = 2**(7/2)*E0*SRpA*sqrt(factorial(nrpAi)*factorial(nrpAj)*factorial(nrmAi)*factorial(nrmAj)*factorial(nrpBi)*factorial(nrpBj)*factorial(nrmBi)*factorial(nrmBj))
+    deltaNRB = nRmBi + nRpBi - nRmBj - nRpBj
+    deltaNRA = nRmAi + nRpAi - nRmAj - nRpAj
+    deltaNrB = nrmBi + nrpBi - nrmBj - nrpBj
+    deltaNrA = nrmAi + nrpAi - nrmAj - nrpAj
+    V = SRpA*2**(7/2)*E0*(-1)**(abs(deltaNRB)) * exp((1j*pi/2)*(deltaNRB+deltaNRA+deltaNrB+deltaNrA))*sqrt(factorial(nrpAi)*factorial(nrpAj)*factorial(nrmAi)*factorial(nrmAj)*factorial(nrpBi)*factorial(nrpBj)*factorial(nrmBi)*factorial(nrmBj))
     return(V)
 
 @numba.jit()
