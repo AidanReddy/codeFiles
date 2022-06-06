@@ -8,13 +8,33 @@ import math
 from math import isclose
 import mpmath as mp
 
+"""
+Note: numba is not compatible mpmath, so I cannot use numba on the matrix element calculations that use the hyperu function from mpmath.
+"""
 hbar = 6.582 * 10**(-13) # meV * s
 electronMass = 5.856301 * 10**(-29) # meV *(second/Å)
 eSquaredOvere0 =  14400 #meV * angstrom #CGS
 
+def oneBody_basis(N, omgh):
+    numBasisStates = int((N+1)*(N+2)/2)
+    npList = zeros(numBasisStates)
+    nmList = zeros(numBasisStates)
+    index = 0
+    for np in range(N+1):
+        for nm in range(N-np+1):
+            npList[index] = np
+            nmList[index] = nm
+            index += 1
+    E0 = (npList+nmList)*omgh
+    ind = argsort(E0)
+    E0 = E0[ind] + omgh
+    npList = npList[ind]
+    nmList = nmList[ind]
+    return(E0,npList.astype(int),nmList.astype(int))
+
 def nonint_basis_symmetric(N, omgh):
     numBasisStates = int((1/24)*((N+1)*(N+2)*(N+3)*(N+4))) # the number of 2 particle 2DIHO states at or below the the N^th noninteracting energy level
-    #First construct a basis with size (nhp*nhm)**2, then pick out Ncut lowest states (Ncut is the number of two-particle basis states we retain states)
+    #First construct a basis with size (nhp*nhm)**2, then pick out Ncut lowest states (Ncut is the number of two-particle basis states we retain)
     nRpList = zeros(numBasisStates)
     nRmList = zeros(numBasisStates)
     nrpList = zeros(numBasisStates)
@@ -29,7 +49,7 @@ def nonint_basis_symmetric(N, omgh):
                     nrpList[index] = nrp
                     nrmList[index] = nrm
                     index += 1
-    ind = logical_not(abs(nrpList-nrmList)%2 == 1)
+    ind = abs(nrpList-nrmList)%2 == 0
     nRpList = nRpList[ind]
     nRmList = nRmList[ind]
     nrpList = nrpList[ind]
@@ -60,7 +80,7 @@ def nonint_basis_antisymmetric(N, omgh):
                     nrpList[index] = nrp
                     nrmList[index] = nrm
                     index += 1
-    ind = logical_not(abs(nrpList-nrmList)%2 == 0)
+    ind = abs(nrpList-nrmList)%2 == 1
     nRpList = nRpList[ind]
     nRmList = nRmList[ind]
     nrpList = nrpList[ind]
@@ -82,7 +102,7 @@ def factorial(n): #a factorial function with floating number output, to avoid nu
     return x
 
 @numba.jit()
-def Coul_hh(omgh,nRpi,nRmi,nrpi,nrmi,nRpj,nRmj,nrpj,nrmj, mStar, dielectricConstant): #this is for two holes on the same quantum dot
+def Coul_hh_2body_noSeparation(omgh,nRpi,nRmi,nrpi,nrmi,nRpj,nRmj,nrpj,nrmj, mStar, dielectricConstant): #this is for two holes on the same quantum dot
     #h-h Coulomb matrix element, two holes distinguishable
     #<nRpi,nRmi;nrpi,nrmi|V_hh|nRpj,nRmj;nrpj,nrmj>
     nsum = nrpj+nrmj+nrmi+nrpi
@@ -105,6 +125,83 @@ def Coul_hh(omgh,nRpi,nRmi,nrpi,nrmi,nRpj,nRmj,nrpj,nrmj, mStar, dielectricConst
     E0 = eSquaredOvere0/(dielectricConstant*L)
     # note that ((-1)**(deltaNr/2)) = (1j)**(deltaNr) since deltaNr is necessarily even. I just code it here as the LHS of this equation to ensure that it is real for the diagonalization code.
     Vij = Srp*sqrt(2)*E0*((-1)**(deltaNr/2))*((-1)**(nrpi+nrmi))*sqrt(factorial(nrpi)*factorial(nrpj)*factorial(nrmi)*factorial(nrmj))
+    return Vij
+
+def Coul_hh_2body_individualQuantumNumbers_verticalSeparation(omgh,dTilde,n1pi,n1mi,n2pi,n2mi,n1pj,n1mj,n2pj,n2mj, mStar,dielectricConstant): #this is for different quantum dots each with one hole
+    if dTilde == 0:
+        return(Coul_hh_2body_individualQuantumNumbers_noSeparation(omgh, n1pi,n1mi,n2pi,n2mi,n1pj,n1mj,n2pj,n2mj, mStar,dielectricConstant))
+    nsum = n1pi+n1mi+n2pi+n2mi+n1pj+n1mj+n2pj+n2mj
+    dl = (n1pi+n2pi-n1mi-n2mi)-(n1pj+n2pj-n1mj-n2mj)
+    deltaN2 = (n2pi+n2mi)-(n2pj+n2mj)
+    deltaN1 = (n1pi+n1mi)-(n1pj+n1mj)
+    deltaNTot = deltaN1 + deltaN2
+    if dl!=0:
+        return 0 #angular momentum conservation
+    S1p = 0 #sum over k1p
+    a1p = 1/factorial(n1pi)/factorial(n1pj) #prefactor of each term in S1p
+    for k1p in range(min(n1pi,n1pj)+1):
+        S1m = 0 #sum over k1m
+        a1m = 1/factorial(n1mi)/factorial(n1mj)
+        for k1m in range(min(n1mi,n1mj)+1):
+            S2p = 0
+            a2p = 1/factorial(n2pi)/factorial(n2pj)
+            for k2p in range(min(n2pi,n2pj)+1):
+                S2m = 0
+                a2m = 1/factorial(n2mi)/factorial(n2mj)
+                for k2m in range(min(n2mi,n2mj)+1):
+                    p = nsum-2*(k1p+k1m+k2p+k2m)
+                    I = sqrt(2)**(-3*(p+1)) * math.gamma(p+1)*mp.hyperu((p+1)/2, (1/2), (1/2)*(dTilde)**2)
+                    S2m += a2m*I
+                    a2m *= -2*(n2mi-k2m)*(n2mj-k2m)/(k2m+1)
+                S2p += a2p*S2m
+                a2p *= -2*(n2pi-k2p)*(n2pj-k2p)/(k2p+1)
+            S1m += a1m*S2p
+            a1m *= -2*(n1mi-k1m)*(n1mj-k1m)/(k1m+1)
+        S1p += a1p*S1m
+        a1p *= -2*(n1pi-k1p)*(n1pj-k1p)/(k1p+1)
+    L = sqrt(hbar**2/(omgh*mStar*electronMass))
+    E0 = eSquaredOvere0/(dielectricConstant*L)
+    # note that ((-1)**(deltaNr/2)) = (1j)**(deltaNr) since deltaNr is necessarily even. I just code it here as the LHS of this equation to ensure that it is real for the diagonalization code.
+    Vij = S1p*2*E0*exp((1j*pi/2)*(deltaNTot))*(-1)**(abs(deltaN2))*((-1)**abs(n1pj+n1mj+n2pj+n2mj))*sqrt(factorial(n1pi)*factorial(n1pj)*factorial(n1mi)*factorial(n1mj)*factorial(n2pi)*factorial(n2pj)*factorial(n2mi)*factorial(n2mj))
+    return Vij
+
+
+
+@numba.jit()
+def Coul_hh_2body_individualQuantumNumbers_noSeparation(omgh, n1pi,n1mi,n2pi,n2mi,n1pj,n1mj,n2pj,n2mj, mStar,dielectricConstant): #this is for different quantum dots each with one hole
+    nsum = n1pi+n1mi+n2pi+n2mi+n1pj+n1mj+n2pj+n2mj
+    dl = (n1pi+n2pi-n1mi-n2mi)-(n1pj+n2pj-n1mj-n2mj)
+    deltaN2 = (n2pi+n2mi)-(n2pj+n2mj)
+    deltaN1 = (n1pi+n1mi)-(n1pj+n1mj)
+    deltaNTot = deltaN1 + deltaN2
+    if dl!=0:
+        return 0 #angular momentum conservation
+    S1p = 0 #sum over k1p
+    a1p = 1/factorial(n1pi)/factorial(n1pj) #prefactor of each term in S1p
+    for k1p in range(min(n1pi,n1pj)+1):
+        S1m = 0 #sum over k1m
+        a1m = 1/factorial(n1mi)/factorial(n1mj)
+        for k1m in range(min(n1mi,n1mj)+1):
+            S2p = 0
+            a2p = 1/factorial(n2pi)/factorial(n2pj)
+            for k2p in range(min(n2pi,n2pj)+1):
+                S2m = 0
+                a2m = 1/factorial(n2mi)/factorial(n2mj)
+                for k2m in range(min(n2mi,n2mj)+1):
+                    p = nsum-2*(k1p+k1m+k2p+k2m)
+                    I = 2**(-(p+3)/2)*math.gamma((p+1)/2)
+                    S2m += a2m*I
+                    a2m *= -2*(n2mi-k2m)*(n2mj-k2m)/(k2m+1)
+                S2p += a2p*S2m
+                a2p *= -2*(n2pi-k2p)*(n2pj-k2p)/(k2p+1)
+            S1m += a1m*S2p
+            a1m *= -2*(n1mi-k1m)*(n1mj-k1m)/(k1m+1)
+        S1p += a1p*S1m
+        a1p *= -2*(n1pi-k1p)*(n1pj-k1p)/(k1p+1)
+    L = sqrt(hbar**2/(omgh*mStar*electronMass))
+    E0 = eSquaredOvere0/(dielectricConstant*L)
+    # note that ((-1)**(deltaNr/2)) = (1j)**(deltaNr) since deltaNr is necessarily even. I just code it here as the LHS of this equation to ensure that it is real for the diagonalization code.
+    Vij = S1p*2*E0*exp((1j*pi/2)*(deltaNTot))*((-1)**(deltaN2))*((-1)**(n1pj+n1mj+n2pj+n2mj))*sqrt(factorial(n1pi)*factorial(n1pj)*factorial(n1mi)*factorial(n1mj)*factorial(n2pi)*factorial(n2pj)*factorial(n2mi)*factorial(n2mj))
     return Vij
 
 def Coul_hh_4body_generalSeparation(dTilde,sTilde,omgh,nRpAi,nRmAi,nrpAi,nrmAi,nRpAj,nRmAj,nrpAj,nrmAj,nRpBi,nRmBi,nrpBi,nrmBi,nRpBj,nRmBj,nrpBj,nrmBj,mStar,dielectricConstant):
@@ -168,7 +265,7 @@ def Coul_hh_4body_generalSeparation(dTilde,sTilde,omgh,nRpAi,nRmAi,nrpAi,nrmAi,n
     deltaNRA = nRmAi + nRpAi - nRmAj - nRpAj
     deltaNrB = nrmBi + nrpBi - nrmBj - nrpBj
     deltaNrA = nrmAi + nrpAi - nrmAj - nrpAj
-    V =SRpA*(2**(7/2))*E0*(-1)**(abs(deltaNRB)) * exp((1j*pi/2)*(deltaNRB+deltaNRA+deltaNrB+deltaNrA))*sqrt(factorial(nrpAi)*factorial(nrpAj)*factorial(nrmAi)*factorial(nrmAj)*factorial(nrpBi)*factorial(nrpBj)*factorial(nrmBi)*factorial(nrmBj))*sqrt(factorial(nRpAi)*factorial(nRpAj)*factorial(nRmAi)*factorial(nRmAj)*factorial(nRpBi)*factorial(nRpBj)*factorial(nRmBi)*factorial(nRmBj))
+    V = SRpA*2**(7/2)*E0*(-1)**(abs(deltaNRB+nRpAj+nRmAj+nrpAj+nrmAj+nRpBj+nRmBj+nrmBj+nrpBj))*1j**(abs(deltaNRB+deltaNRA+deltaNrB+deltaNrA))*sqrt(factorial(nrpAi)*factorial(nrpAj)*factorial(nrmAi)*factorial(nrmAj)*factorial(nrpBi)*factorial(nrpBj)*factorial(nrmBi)*factorial(nrmBj))
     return(V)
 
 def Coul_hh_4body_verticalSeparation(dTilde,omgh,nRpAi,nRmAi,nrpAi,nrmAi,nRpAj,nRmAj,nrpAj,nrmAj,nRpBi,nRmBi,nrpBi,nrmBi,nRpBj,nRmBj,nrpBj,nrmBj,mStar,dielectricConstant):
@@ -234,7 +331,7 @@ def Coul_hh_4body_verticalSeparation(dTilde,omgh,nRpAi,nRmAi,nrpAi,nrmAi,nRpAj,n
     deltaNRA = nRmAi + nRpAi - nRmAj - nRpAj
     deltaNrB = nrmBi + nrpBi - nrmBj - nrpBj
     deltaNrA = nrmAi + nrpAi - nrmAj - nrpAj
-    V =SRpA*(2**(7/2))*E0*(-1)**(abs(deltaNRB)) * exp((1j*pi/2)(deltaNRB+deltaNRA+deltaNrB+deltaNrA))*sqrt(factorial(nrpAi)*factorial(nrpAj)*factorial(nrmAi)*factorial(nrmAj)*factorial(nrpBi)*factorial(nrpBj)*factorial(nrmBi)*factorial(nrmBj))*sqrt(factorial(nRpAi)*factorial(nRpAj)*factorial(nRmAi)*factorial(nRmAj)*factorial(nRpBi)*factorial(nRpBj)*factorial(nRmBi)*factorial(nRmBj))
+    V = SRpA*2**(7/2)*E0*(-1)**(abs(deltaNRB+nRpAj+nRmAj+nrpAj+nrmAj+nRpBj+nRmBj+nrmBj+nrpBj))*1j**(abs(deltaNRB+deltaNRA+deltaNrB+deltaNrA))*sqrt(factorial(nrpAi)*factorial(nrpAj)*factorial(nrmAi)*factorial(nrmAj)*factorial(nrpBi)*factorial(nrpBj)*factorial(nrmBi)*factorial(nrmBj))
     return(V)
 
 def Coul_hh_4body_noSeparation(omgh,nRpAi,nRmAi,nrpAi,nrmAi,nRpAj,nRmAj,nrpAj,nrmAj,nRpBi,nRmBi,nrpBi,nrmBi,nRpBj,nRmBj,nrpBj,nrmBj,mStar,dielectricConstant):
@@ -294,8 +391,10 @@ def Coul_hh_4body_noSeparation(omgh,nRpAi,nRmAi,nrpAi,nrmAi,nRpAj,nRmAj,nrpAj,nr
     deltaNRA = nRmAi + nRpAi - nRmAj - nRpAj
     deltaNrB = nrmBi + nrpBi - nrmBj - nrpBj
     deltaNrA = nrmAi + nrpAi - nrmAj - nrpAj
-    V = SRpA*2**(7/2)*E0*(-1)**(abs(deltaNRB)) * exp((1j*pi/2)*(deltaNRB+deltaNRA+deltaNrB+deltaNrA))*sqrt(factorial(nrpAi)*factorial(nrpAj)*factorial(nrmAi)*factorial(nrmAj)*factorial(nrpBi)*factorial(nrpBj)*factorial(nrmBi)*factorial(nrmBj))
+    V = SRpA*2**(7/2)*E0*(-1)**(abs(deltaNRB+nRpAj+nRmAj+nrpAj+nrmAj+nRpBj+nRmBj+nrmBj+nrpBj))*1j**(abs(deltaNRB+deltaNRA+deltaNrB+deltaNrA))*sqrt(factorial(nrpAi)*factorial(nrpAj)*factorial(nrmAi)*factorial(nrmAj)*factorial(nrpBi)*factorial(nrpBj)*factorial(nrmBi)*factorial(nrmBj))
     return(V)
+
+
 
 @numba.jit()
 def Coul_mat_hh(omgh,basis,mStar,dielectricConstant):
@@ -315,7 +414,7 @@ def Coul_mat_hh(omgh,basis,mStar,dielectricConstant):
             if nRpi != nRpj or nRmi != nRmj:
                 Vij = 0
             else:
-                Vij = Coul_hh(omgh,nRpi,nRmi,nrpi,nrmi,nRpj,nRmj,nrpj,nrmj,mStar,dielectricConstant)
+                Vij = Coul_hh_2body_noSeparation(omgh,nRpi,nRmi,nrpi,nrmi,nRpj,nRmj,nrpj,nrmj,mStar,dielectricConstant)
             V[i,j] = Vij
             V[j,i] = Vij
     return V
@@ -373,9 +472,8 @@ def ED_hh(basis_s, basis_a, omgh, mStar,dielectricConstant):
     return Es_s, evecs_s, Es_a, evecs_a
 
 #function to calculate flip flop Coulomb interaction between s=two atoms. Flip flop means that the atoms switch states, i.e. <eigenstate beta|<eigenstate alpha|V|eigenstate alpha>|eigenstate beta>. In other words, only two unique eigenstates involved, as opposed to four.
-
 #@numba.jit()
-def Coul_estateestate(dTilde, sTilde, eigenstateAiIndex, eigenstateAjIndex, eigenstateBiIndex, eigenstateBjIndex, cutoff, omgh, basisStatesMatrix, evecs, mStar,dielectricConstant):
+def Coul_4body_estateestate(dTilde, sTilde, eigenstateAiIndex, eigenstateAjIndex, eigenstateBiIndex, eigenstateBjIndex, cutoff, omgh, basisStatesMatrix, evecs, mStar,dielectricConstant):
     V = 0
     numBasisStates = shape(basisStatesMatrix)[1]
     eigenstateAi = evecs[:, eigenstateAiIndex]

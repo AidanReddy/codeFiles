@@ -1,0 +1,329 @@
+import numpy as np
+import scipy.linalg as la
+import numpy.linalg #I also import this because numba support numpy linalg but not necessarily scipy linalg functions
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import proplot as pplt
+mpl.rcParams['pdf.fonttype'] = 42
+mpl.rcParams['ps.fonttype'] = 42
+plt.rcParams.update({'font.size': 12})
+mpl.rcParams['font.family'] = 'Arial'
+mpl.rcParams["savefig.jpeg_quality"]
+import math
+import timeit
+import multiprocessing as mp
+from numba import njit
+from numba import jit
+from datetime import date
+today = date.today()
+date = today.strftime("%b%d%Y")
+
+import continuumModelBandsModule as cmb
+
+N = 7 #7 ### Creates NxN k space mesh. N MUST BE ODD!!!!!
+numShells = 9 # number of reciprocal lattice vector shells
+theta = 3 * math.pi/180 # twist angle
+material = 'MoS2' #WS2
+hbareta =  1 # meV
+hbarwMin = 0 # meV
+hbarwMax = 100*theta*180/math.pi #meV
+numhbarwVals = 400
+modStrengthFactor = 1 #multiplicative factor for moire potential
+TVals = np.array([0,300,1000])
+TMin = np.min(TVals)
+TMax = np.max(TVals)
+numTVals = np.shape(TVals)[0]
+hbarwVals = np.linspace(hbarwMin, hbarwMax, numhbarwVals)
+electronMass = 5.856301 * 10**(-29) # meV *(second/Å)
+
+if material == 'WS2':
+    a = 3.18 # atomic lattice constant in Å
+    V1 = 33.5 * modStrengthFactor #meV
+    V2 = 4.0 * modStrengthFactor #meV
+    V3 = 5.5 * modStrengthFactor #meV
+    phi = math.pi #phase that enters moiré potential Fourier expansion
+    mStar = 0.87 * electronMass # effective mass at untwisted bilayer valence band maximum
+if material =='MoS2':
+    a = 3.182 # atomic lattice constant in Å
+    V1 = 39.45 * modStrengthFactor #meV
+    V2 = 6.5 * modStrengthFactor #meV
+    V3 = 10.0 * modStrengthFactor #meV
+    phi = np.pi #phase that enters moiré potential Fourier expansion
+    electronMass = 5.856301 * 10**(-29) # meV *(second/Å)
+    mStar = 0.9 * electronMass # effective mass at untwisted bilayer valence band maximum
+
+hbar = 6.582 * 10**(-13) # meV * s
+#static, bulk dielectric tensor components of hBN from npj 2D Materials and Applications (2018) 2:6 ; doi:10.1038/s41699-018-0050-x
+epsilonPerp = 3.76
+epsilonPar = 6.93
+epsilonEff = math.sqrt(epsilonPar*epsilonPerp)
+epsilonEffD = math.sqrt(epsilonPar/epsilonPerp)
+dielectricConstant = epsilonEff
+
+eSquaredOvere =  180951.2818 * 1/dielectricConstant #meV * angstrom
+WattSecondsPermeV = 1.602 * 10**(-22)
+Kb = 0.08617 # meV per Kelvin
+SquareMetersPerSqareAngstrom = 10**(-20)
+
+am = a/theta #moiré period in linear approximation
+A = (am**2) * math.sqrt(3)/2 * N**2 # define total lattice area A
+b1 = (4*math.pi/math.sqrt(3)) * (1/am) * np.array([1,0]) # define reciprocal basis vectors b1 and b2 for moire lattice
+b2 = (4*math.pi/math.sqrt(3)) * (1/am) * np.array([0.5, math.sqrt(3)/2])
+a1 = am * np.array([math.sqrt(3)/2, -1/2]) # define real basis vectors a1 and a2 for moire lattice
+a2 = am * np.array([0, 1])
+gamma = np.array([0,0]) ### symmetry points in 1BZ
+K = ((b1+b2)/la.norm(b1+b2)) * (la.norm(b1)/math.sqrt(3))
+KPrime = ((2*b2 - b1)/la.norm(2*b2 - b1)) * (la.norm(b1)/math.sqrt(3))
+KPrime2 = -1 * K
+
+# define gVals
+shells = cmb.computeShell(numShells, am)
+numInShells = np.shape(shells)[0]
+gVals = shells#computeShell(math.floor(numShells/2))
+numgVals = np.shape(gVals)[0]
+numBands = np.shape(shells)[0]
+firstAndSecondShells = cmb.computeShell(2, am) # for use in findgVals
+
+#mesh
+mesh, reducedMesh, reducedMeshCounter, meshToReducedMeshIndexMap = cmb.computeMesh(N,am)
+numMesh = np.shape(mesh)[0]
+numRedMesh = np.shape(reducedMesh)[0]
+
+@njit
+def sendToMesh(q, mesh=mesh, numMesh=numMesh, K=K, firstAndSecondShells=firstAndSecondShells, numTries = 0):
+    if numTries == 0:
+        offset = np.array([0,0]).astype(np.float64)
+    if numTries != 0:
+        offset = firstAndSecondShells[numTries-1]
+    qOffset = q.astype(np.float64)-offset
+    for i in range(numMesh):
+        distance = np.linalg.norm(mesh[i]-qOffset)
+        if distance <= (1/100)*(np.linalg.norm(K)/numMesh):
+            numTries = 0
+            return(mesh[i], i, offset)
+    else:
+        numTries += 1
+        return(sendToMesh(q, mesh, numMesh, K, firstAndSecondShells, numTries))
+
+#kronecker delta
+def kronDelta(a,b):
+    if np.array_equal(a,b):
+        return(1)
+    else:
+        return(0)
+
+#modulation potential
+def computeV(b, V1 = V1, V2 = V2, V3 = V3, phi = phi, gVectors = shells, b1 = b1):
+    if b in gVectors:
+        if np.allclose(la.norm(b), la.norm(b1)):
+            V = V1 * np.exp(complex(0,phi))
+            return(V)
+        elif np.allclose(la.norm(b), 1.73205081*la.norm(b1)):
+            V = V2 * np.exp(complex(0,phi))
+            return(V)
+        elif np.allclose(la.norm(b), 2*la.norm(b1)):
+            V = V3 * np.exp(complex(0,phi))
+            return(V)
+    return(0)
+
+#compute matrix elements
+def computeMatrixElement(k, g, gprime):
+    V = computeV(gprime - g)
+    matrixElement = -1 * kronDelta(g, gprime) * (hbar)**2 *(1/(2*mStar)) * np.dot(k+g, k+g) + V
+    return(matrixElement)
+
+# compute matrix
+def computeMatrix(k, gVals = shells):
+    gprimeVals = gVals
+    matrix = np.array([])
+    for i in gVals:
+        for j in gprimeVals:
+            matrixElement = computeMatrixElement(k,i,j)
+            matrix = np.append(matrix, matrixElement)
+    matrix = matrix.reshape((len(gVals)),len(gprimeVals))
+    return(matrix)
+
+def computeEigStuff(k):
+    eigVals, eigVecs = la.eig(computeMatrix(k))
+    eigValsSorted = np.sort(eigVals)
+    eigVecsSorted = eigVecs[:, eigVals.argsort()]
+    return(eigValsSorted, eigVecsSorted)
+
+#old version, it is proven to work 01/04/22
+def computeMegaEigStuff(reducedMesh = reducedMesh, numBands = numBands):
+    #the mesh used here is the reducedMesh
+    numRedMesh = np.shape(reducedMesh)[0]
+    megaEigValArray = np.array([])
+    megaEigVecArray = np.array([])
+    for i in range(numRedMesh):
+        redMeshVal = reducedMesh[i]
+        redMeshValEigVals, redMeshValEigVecs = computeEigStuff(redMeshVal)
+        megaEigValArray = np.append(megaEigValArray, redMeshValEigVals)
+        megaEigVecArray = np.append(megaEigVecArray, redMeshValEigVecs)
+    megaEigValArray = megaEigValArray.reshape(numRedMesh, numBands)
+    megaEigVecArray = megaEigVecArray.reshape(numRedMesh, numBands, numBands)
+    return(np.real(megaEigValArray), megaEigVecArray)
+
+
+#compute megaEigStuff only for reducedMesh
+megaEigValArray, megaEigVecArray = computeMegaEigStuff()
+print('eigstuff done')
+
+#set VBM to zero
+megaEigValArray = megaEigValArray - np.max(megaEigValArray)
+
+print('megaEigValArray shape:', np.shape(megaEigValArray))
+firstBand = megaEigValArray[:, numBands-1]
+secondBand = megaEigValArray[:, numBands-2]
+thirdBand = megaEigValArray[:, numBands-3]
+fourthBand = megaEigValArray[:, numBands-4]
+fifthBand = megaEigValArray[:, numBands-5]
+sixthBand = megaEigValArray[:, numBands-6]
+
+print('reduced mesh counter:', reducedMeshCounter)
+print('first band:', np.shape(firstBand))
+bottomSecondBand = np.min(secondBand)
+#note we are computing weighted average
+centerFirstBand = np.average(firstBand,0,reducedMeshCounter)
+centerSecondBand = np.average(secondBand,0,reducedMeshCounter)
+centerThirdBand = np.average(thirdBand,0,reducedMeshCounter)
+centerFourthBand = np.average(fourthBand,0,reducedMeshCounter)
+centerFifthBand = np.average(fifthBand,0,reducedMeshCounter)
+centerSixthBand = np.average(sixthBand,0,reducedMeshCounter)
+
+#UPDATED AUGUST 21 2021
+bottomSecondBand = np.min(secondBand)
+Ef = np.real((centerFirstBand+centerSecondBand)/2 + (centerThirdBand+centerFourthBand+centerFifthBand+centerSixthBand)/4)/2
+bandgap = np.real((centerFirstBand+centerSecondBand)/2 - (centerThirdBand+centerFourthBand+centerFifthBand+centerSixthBand)/4)
+
+#NUmba version, which I needed to modify because numba doesnt support np.allclose(), runs several times faster than the python version!
+@njit
+def findgIndex(g, shells = shells):
+    lenShells = np.shape(shells)[0]
+    gIndex = 0
+    for gVal in shells:
+        #USE THIS IF NOT USING @njit: if np.allclose(g, gVal):
+        if np.linalg.norm(g-gVal) <= np.linalg.norm(g)/100: #FOR USE WITH NJIT
+            return(gIndex)
+        gIndex += 1
+    return(1000)
+
+
+@njit
+def fermi(E, T = 0, mu = Ef, Kb = Kb):
+    if T == 0:
+        if E <= mu:
+            return(1)
+        if E > mu:
+            return(0)
+    else:
+        fermi = (np.exp(np.real((E - mu)/(Kb*T))) + 1)**(-1)
+        return(fermi)
+
+
+@njit
+def MuTtoN(mu, T, megaEigValArray = megaEigValArray, reducedMeshCounter = reducedMeshCounter):
+    n = 0
+    #update N calculation to account for symmetry reduction weighting
+    for i in range(np.shape(megaEigValArray)[0]):
+        for j in range(np.shape(megaEigValArray)[1]):
+            energyVal = megaEigValArray[i,j]
+            n += fermi(energyVal, T, mu) * reducedMeshCounter[i]
+    return(n)
+
+@njit
+def computeMuOfTVector(Ef, TVals = TVals, megaEigValArray = megaEigValArray, reducedMeshCounter = reducedMeshCounter):
+    numTVals = np.shape(TVals)[0]
+    n = 0
+    #update N calculation to account for symmetry reduction weighting
+    for i in range(np.shape(megaEigValArray)[0]):
+        for j in range(np.shape(megaEigValArray)[1]):
+            energyVal = megaEigValArray[i,j]
+            if energyVal <= Ef:
+                n += reducedMeshCounter[i]
+    MuOfTVector = np.zeros(numTVals)
+    trialMu = Ef
+    for TIndex, T in np.ndenumerate(TVals):
+        nFound = False
+        while nFound == False:
+            trialn = MuTtoN(trialMu, T)
+            nFound = abs(n-trialn)/n < 0.001
+            trialMu += 0.01
+        MuOfTVector[TIndex] = trialMu
+    return(MuOfTVector)
+
+MuOfTVector = computeMuOfTVector(Ef)
+
+@njit#(cache = True) #cache = True saves numba compilation for later
+def computeDDRFMatrixElement(q, g, gPrime, hbarwVals = hbarwVals, TVals = TVals, mesh = mesh, gVals=gVals, meshToReducedMeshIndexMap = meshToReducedMeshIndexMap, hbareta = hbareta, numBands = numBands, megaEigValArray = megaEigValArray, megaEigVecArray = megaEigVecArray):
+    DDRFMatrix = np.zeros((numhbarwVals, numTVals,2,2), dtype=np.complex128) #for some reason the np.complex128 is crucial for numba compatibility
+    q = sendToMesh(q)[0]
+    gIndex = findgIndex(g)
+    g = gVals[gIndex]
+    gPrimeIndex = findgIndex(gPrime)
+    gPrime = gVals[gPrimeIndex]
+    gValsForMatrixElement = np.vstack((g, gPrime))
+    for kIndex in range(numMesh):
+        print('kIndex:', kIndex)
+        k = mesh[kIndex]
+        kPlusQ = k + q
+        kPlusQInMesh, kPlusQInMeshIndex, KTrans = sendToMesh(kPlusQ)
+        kRedIndex = meshToReducedMeshIndexMap[kIndex]
+        kEigVals = megaEigValArray[kRedIndex]
+        kPlusQInMeshRedIndex = meshToReducedMeshIndexMap[kPlusQInMeshIndex]
+        kPlusQInMeshEigVals = megaEigValArray[kPlusQInMeshRedIndex]
+        kEigVecs = megaEigVecArray[kRedIndex]
+        kPlusQInMeshEigVecs = megaEigVecArray[kPlusQInMeshRedIndex]
+        for n in range(numBands):
+            Enk =  kEigVals[n]
+            nkEigVec = kEigVecs[:, n]
+            for nPrime in range(numBands):
+                EnPrimekPlusQ = kPlusQInMeshEigVals[nPrime]
+                nPrimekPlusQEigVec = kPlusQInMeshEigVecs[:, nPrime]
+                deltaEnergy = EnPrimekPlusQ - Enk
+                innerProductList = np.zeros(numgVals, dtype = np.complex128) #for some reason the np.complex128 is crucial for numba compatibility
+                for KIndex in range(numgVals):
+                    K = gVals[KIndex]
+                    ZKkn = nkEigVec[KIndex]
+                    for gIndex in range(2):
+                        g = gValsForMatrixElement[gIndex]
+                        KPlusGPlusKTrans =  K + g + KTrans
+                        KPlusGPlusKTransIndex = findgIndex(KPlusGPlusKTrans)
+                        if KPlusGPlusKTransIndex != 1000: # I have my findgINdex function set up so that if its argument is not includes in my shells, the function returns False, and then I just don't count that term in my sum.
+                            ZKPlusGPlusKTranskPlusqnPrime = nPrimekPlusQEigVec[KPlusGPlusKTransIndex]
+                            ZKPlusGPlusKTranskPlusqnPrimeStar = np.conj(ZKPlusGPlusKTranskPlusqnPrime)
+                            #not acutally an inner product, just one component of an inner product
+                            innerProduct = ZKPlusGPlusKTranskPlusqnPrimeStar * ZKkn
+                            innerProductList[gIndex] += innerProduct
+                innerProductMatrix = np.outer(np.conj(innerProductList), innerProductList)
+                for hbarwIndex in range(numhbarwVals):
+                    hbarw = hbarwVals[hbarwIndex]
+                    otherTerm = complex(hbarw - deltaEnergy, -hbareta)/((hbarw - deltaEnergy)**2 + hbareta**2)
+                    for TIndex, T in np.ndenumerate(TVals):
+                        MuOfT = MuOfTVector[TIndex]
+                        fermiTerm = fermi(Enk, T, MuOfT) - fermi(EnPrimekPlusQ, T, MuOfT)
+                        incrementMatrix = innerProductMatrix * fermiTerm * otherTerm
+                        DDRFMatrix[hbarwIndex][TIndex] += incrementMatrix
+    DDRFMatrix *= 2/A # FACTOR OF TWO ACCOUNTS FOR SPIN DEGENERACY
+    return(DDRFMatrix[:,:,0,0])
+
+
+q = mesh[int(N/2)+N*(int(N/2)+1)]
+
+q, meshIndex, offset = sendToMesh(q)
+
+qMag = la.norm(q)/la.norm(b1)
+
+print('magqOverMagb1:', qMag)
+print('q:', q)
+
+DDRFMatrixElement = computeDDRFMatrixElement(q, np.zeros(2), np.zeros(2))
+
+DDRFName = str('DDRFZeroZero%s%sN=%dShells=%dHbareta=%.2fTheta=%senergy%d,%d,%dTVals=0,300,1000ModFactor=%s' % (material, date, N, numShells, hbareta, (theta*180/math.pi), hbarwMin, hbarwMax, numhbarwVals, modStrengthFactor))
+np.save(DDRFName, DDRFMatrixElement)
+
+plt.plot(hbarwVals, -1*np.imag(DDRFMatrixElement[:,0]), color ='black')
+plt.plot(hbarwVals, -1*np.imag(DDRFMatrixElement[:,1]), color ='blue')
+plt.plot(hbarwVals, -1*np.imag(DDRFMatrixElement[:,2]), color ='red')
+
+plt.show()

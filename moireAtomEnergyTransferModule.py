@@ -9,7 +9,7 @@ from datetime import date
 today = date.today()
 date = today.strftime("%b%d%Y")
 
-import EDTwoElectron2DHarmonicAtomModuleCOMandRelBasis as ed
+import EDandMatrixElementsModule as ed
 import continuumModelBandsModule as cmb
 import materialContinuumModelParameters as cmp
 
@@ -48,8 +48,8 @@ def computeParameters(theta, a, V1, V2, V3, mStar, dielectricConstant, modStreng
 def calculateGammaofN(theta, material, numGammaNContinuumModel, modStrengthFactor):
     cmb.theta = theta * np.pi/180 # twist angle
     cmb.N = 7 #7 ### Creates NxN k space mesh. N MUST BE ODD!!!!!
-    cmb.numShells = 11 # number of reciprocal lattice vector shells
-    cmb.modStrengthFactor = modStrengthFactor #multiplicative factor for moire potential
+    cmb.numShells = 18 # number of reciprocal lattice vector shells
+    cmb.modStrengthFactor = modStrengthFactor #multiticative factor for moire potential
     cmb.electronMass = 5.856301 * 10**(-29) # meV *(second/Å)
     print('material:', material)
     cmb.a, cmb.V1, cmb.V2, cmb.V3, cmb.phi, cmb.mStar = cmp.materialContinuumModelParameters(material)
@@ -82,7 +82,7 @@ def calculateGammaofN(theta, material, numGammaNContinuumModel, modStrengthFacto
     return(GammaofNContinuumModel)
 
 @njit
-def computePartitionFunction(nu, beta, mu, Es_s, Es_a, ESingleParticle_s, ESingleParticle_a):
+def computePartitionFunction(nu, beta, mu, Es_s, Es_a, EOneBody=np.array([0])): #dummy argument for EOneBody because I only need it for nu=2 and not for nu=4
     if nu==4:
         Z=0
         for energyVal_s in Es_s:
@@ -98,12 +98,10 @@ def computePartitionFunction(nu, beta, mu, Es_s, Es_a, ESingleParticle_s, ESingl
         for energyVal_a in Es_a:
             Z+=np.exp(-(energyVal_a-2*mu)*beta)
         # one hole fock space
-        for energyValSingleParticle_s in ESingleParticle_s:
-            Z+=np.exp(-(energyValSingleParticle_s-1*mu)*beta)
-        for energyValSingleParticle_a in ESingleParticle_a:
-            Z+=np.exp(-(energyValSingleParticle_a-1*mu)*beta)
+        for energyValOneBody in EOneBody:
+            Z+=np.exp(-(energyValOneBody-1*mu)*beta)
         # zero hole fock space
-        Z+=1 #1=exp(-(0-mu*0)beta)
+        Z+=1 #np.exp(-(0-mu*0)*beta)
     return(Z)
 
 @njit
@@ -112,11 +110,11 @@ def computeDetailedBalance(eStateEnergy, eStatePrimeEnergy, beta1, beta2, Z1, Z2
     return(detailedBalance)
 
 @njit
-def MuTtoN(mu, nu, T, energyValsFock1, energyValsFock2, Es_s, Es_a, ESingleParticle_s, ESingleParticle_a):
+def MuTtoN(mu, nu, T, energyValsFock1, energyValsFock2, Es_s, Es_a, EOneBody):
     n = 0
     #print('T:', T)
     beta = 1/(Kb*T)
-    Z = computePartitionFunction(nu, beta, mu, Es_s, Es_a, ESingleParticle_s, ESingleParticle_a)
+    Z = computePartitionFunction(nu, beta, mu, Es_s, Es_a, EOneBody)
     for energyValFock1 in energyValsFock1:
         n += 1*np.exp(-(energyValFock1-1*mu)*beta)/Z
     for energyValFock2 in energyValsFock2:
@@ -124,12 +122,12 @@ def MuTtoN(mu, nu, T, energyValsFock1, energyValsFock2, Es_s, Es_a, ESingleParti
     return(n)
 
 @njit
-def computeMuOfTVector(TVals, hbaromega, n, nu, muOfTPrecision, ESingleParticle_s, ESingleParticle_a, Es_s, Es_a):
+def computeMuOfTVector(TVals, hbaromega, n, nu, muOfTPrecision, EOneBody, Es_s, Es_a):
     numTVals = np.shape(TVals)[0] #note that n is <number of holes per moiré atom>
-    energyValsFock1 = np.sort(np.concatenate((ESingleParticle_s, ESingleParticle_a))) - hbaromega
+    energyValsFock1 = EOneBody
     energyValsFock2 = np.sort(np.concatenate((Es_s, Es_a)))
     MuOfTVector = np.zeros(numTVals)
-    trialMu = 1*hbaromega
+    trialMu = 3*hbaromega
     for TIndex, T in np.ndenumerate(TVals):
         #print('TIndex:', TIndex)
         nFound = False
@@ -139,7 +137,7 @@ def computeMuOfTVector(TVals, hbaromega, n, nu, muOfTPrecision, ESingleParticle_
                 print('error in mu of t calculation!')
             #print('trialMu/hbaromega:', trialMu/hbaromega)
             trialMu -= 0.01*muOfTPrecision*hbaromega # be weary! If i make this step too big, it wont work. e.g. 0.01 wasnt working and it took me a while to get to the bottom of it. But now I got it! So, if this function is causing errors, try making the mu step smaller.
-            trialn = MuTtoN(trialMu, nu, T, energyValsFock1, energyValsFock2, Es_s, Es_a, ESingleParticle_s, ESingleParticle_a)
+            trialn = MuTtoN(trialMu, nu, T, energyValsFock1, energyValsFock2, Es_s, Es_a, EOneBody)
             #print('trialn:', trialn)
             nFound = trialn < (1+muOfTPrecision)*n and trialn > (1-muOfTPrecision)*n
         MuOfTVector[TIndex] = trialMu
@@ -152,13 +150,13 @@ def computeLorentzianFactor(eigenstateAiIndex, eigenstateAjIndex, eigenstateBiIn
         NAj = eigenstateIndextoNArraySym[eigenstateAjIndex]
         NBi = eigenstateIndextoNArraySym[eigenstateBiIndex]
         NBj = eigenstateIndextoNArraySym[eigenstateBjIndex]
-        detuning = abs(Es_s[eigenstateAiIndex]-Es_s[eigenstateAjIndex])-abs(Es_s[eigenstateBiIndex]-Es_s[eigenstateBjIndex])
+        detuning = abs(Es_s[eigenstateAiIndex]-Es_s[eigenstateAjIndex]+(Es_s[eigenstateBiIndex]-Es_s[eigenstateBjIndex]))
     elif parity == -1:
         NAi = eigenstateIndextoNArrayAsym[eigenstateAiIndex]
         NAj = eigenstateIndextoNArrayAsym[eigenstateAjIndex]
         NBi = eigenstateIndextoNArrayAsym[eigenstateBiIndex]
         NBj = eigenstateIndextoNArrayAsym[eigenstateBjIndex]
-        detuning = abs(Es_a[eigenstateAiIndex]-Es_a[eigenstateAjIndex])-abs(Es_a[eigenstateBiIndex]-Es_a[eigenstateBjIndex])
+        detuning = abs(Es_a[eigenstateAiIndex]-Es_a[eigenstateAjIndex]+(Es_a[eigenstateBiIndex]-Es_a[eigenstateBjIndex]))
     GammaAi = GammaofN[NAi] #note: this definition od GammaN gets wishy-washy when bands start crossing
     GammaAj = GammaofN[NAj]
     GammaBi = GammaofN[NBi]
@@ -167,8 +165,9 @@ def computeLorentzianFactor(eigenstateAiIndex, eigenstateAjIndex, eigenstateBiIn
     lorentzianFactor = (1/np.pi)*(Gamma/2)/((detuning)**2+(Gamma/2)**2)
     return(lorentzianFactor)
 
-def computeEnergyTransferTLineCutSingleParticle(hbaromega, T1T2Vals,beta1beta2Vals, Z1Z2Vals, dTilde, sTilde, mStar, epsForEnergyTransfer, numEStatesIncluded, A, ESingleParticle_s, ESingleParticle_a, basisStatesMatrix_s, basisStatesMatrix_a, GammaofN, Gamma0, eigenstateIndextoNArraySym, eigenstateIndextoNArrayAsym):
-    QDot = np.zeros(np.shape(T1T2Vals)[0])
+def computeEnergyTransferTLineCutSingleParticle(hbaromega, T1T2Vals,beta1beta2Vals, Z1Z2Vals, dTilde, sTilde, mStar, epsForEnergyTransfer, numEStatesIncluded, A, ESingleParticle_s, ESingleParticle_a, basisStatesMatrix_s, basisStatesMatrix_a, GammaofN, Gamma0):
+    QDot_s = np.zeros(np.shape(T1T2Vals)[0])
+    QDot_a = np.zeros(np.shape(T1T2Vals)[0])
     VSquaredArray_s = np.zeros((numEStatesIncluded, numEStatesIncluded, numEStatesIncluded, numEStatesIncluded))
     VSquaredArray_a = np.zeros((numEStatesIncluded, numEStatesIncluded, numEStatesIncluded, numEStatesIncluded))
     for basisStateAiIndex in range(numEStatesIncluded):
@@ -264,8 +263,8 @@ def computeEnergyTransferTLineCutSingleParticle(hbaromega, T1T2Vals,beta1beta2Va
                         detailedBalance_a = computeDetailedBalance(basisStateAiEnergy_a, basisStateBiEnergy_a, beta1, beta2, Z1, Z2)
                         deltaEnergy_s = ((basisStateAiEnergy_s-basisStateAjEnergy_s)-(basisStateBiEnergy_s-basisStateBjEnergy_s))/2
                         deltaEnergy_a = ((basisStateAiEnergy_a-basisStateAjEnergy_a)-(basisStateBiEnergy_a-basisStateBjEnergy_a))/2
-                        detuning_s = (abs(basisStateAiEnergy_s-basisStateAjEnergy_s)-abs(basisStateBiEnergy_s-basisStateBjEnergy_s))
-                        detuning_a = (abs(basisStateAiEnergy_a-basisStateAjEnergy_a)-abs(basisStateBiEnergy_a-basisStateBjEnergy_a))
+                        detuning_s = abs((basisStateAiEnergy_s-basisStateAjEnergy_s)+(basisStateBiEnergy_s-basisStateBjEnergy_s))
+                        detuning_a = abs((basisStateAiEnergy_a-basisStateAjEnergy_a)+(basisStateBiEnergy_a-basisStateBjEnergy_a))
                         GammaAi_s = GammaofN[NAi_s] #doesnt work once bands start crossing, need to revise
                         GammaAj_s = GammaofN[NAj_s]
                         GammaBi_s = GammaofN[NBi_s]
@@ -278,13 +277,19 @@ def computeEnergyTransferTLineCutSingleParticle(hbaromega, T1T2Vals,beta1beta2Va
                         Gamma_a = GammaAi_a+GammaAj_a+GammaBi_a+GammaBj_a+4*Gamma0
                         lorentzianFactor_s = (1/np.pi)*(Gamma_s/2)/((detuning_s)**2+(Gamma_s/2)**2)
                         lorentzianFactor_a = (1/np.pi)*(Gamma_a/2)/((detuning_a)**2+(Gamma_a/2)**2)
-                        QDot[TIndex] += VSquared_s * detailedBalance_s * deltaEnergy_s * lorentzianFactor_s + VSquared_a * detailedBalance_a * deltaEnergy_a * lorentzianFactor_a
-    QDot *= 2*np.pi/hbar/(A * SquareMetersPerSqareAngstrom) * JoulesPermeV * 2 #(last factor of two is because two moire atoms per unit cell) # outputs in Watts
-    G = np.einsum('i,i-> i', abs(QDot), abs((T1T2Vals[:,0]-T1T2Vals[:,1])**(-1)))
-    return(QDot, G)
+                        QDot_s[TIndex] += VSquared_s * detailedBalance_s * deltaEnergy_s * lorentzianFactor_s
+                        QDot_a[TIndex] += VSquared_a * detailedBalance_a * deltaEnergy_a * lorentzianFactor_a
+    QDot_s *= 2*np.pi/hbar/(A * SquareMetersPerSqareAngstrom) * JoulesPermeV * 2 #(last factor of two is because two moire atoms per unit cell) # outputs in Watts
+    QDot_a *= 2*np.pi/hbar/(A * SquareMetersPerSqareAngstrom) * JoulesPermeV * 2
+    QDot = QDot_s+QDot_a
+    G_s = np.einsum('i,i-> i', abs(QDot_s), abs((T1T2Vals[:,0]-T1T2Vals[:,1])**(-1)))
+    G_a = np.einsum('i,i-> i', abs(QDot_a), abs((T1T2Vals[:,0]-T1T2Vals[:,1])**(-1)))
+    G = G_s + G_a
+    return(QDot, G, G_s, G_a)
 
 def computeEnergyTransferTLineCut(hbaromega, T1T2Vals,beta1beta2Vals, Z1Z2Vals, dTilde, sTilde, mStar, epsForEnergyTransfer, numEStatesIncluded, cutoff, A, Es_s, Es_a, evecs_s, evecs_a, basisStatesMatrix_s, basisStatesMatrix_a, GammaofN, Gamma0, eigenstateIndextoNArraySym, eigenstateIndextoNArrayAsym): #working as of 03/18/2022
-    QDot = np.zeros(np.shape(T1T2Vals)[0])
+    QDot_s = np.zeros(np.shape(T1T2Vals)[0])
+    QDot_a = np.zeros(np.shape(T1T2Vals)[0])
     VSquaredArray_s = np.zeros((numEStatesIncluded, numEStatesIncluded, numEStatesIncluded, numEStatesIncluded))
     VSquaredArray_a = np.zeros((numEStatesIncluded, numEStatesIncluded, numEStatesIncluded, numEStatesIncluded))
     for eigenstateAiIndex in range(numEStatesIncluded):
@@ -299,8 +304,8 @@ def computeEnergyTransferTLineCut(hbaromega, T1T2Vals,beta1beta2Vals, Z1Z2Vals, 
                 for eigenstateBjIndex in range(numEStatesIncluded):
                     eigenStateBjEnergy_s = Es_s[eigenstateBjIndex]
                     eigenStateBjEnergy_a = Es_a[eigenstateBjIndex]
-                    V_s = ed.Coul_estateestate(dTilde, sTilde, eigenstateAiIndex, eigenstateAjIndex, eigenstateBiIndex, eigenstateBjIndex, cutoff, hbaromega, basisStatesMatrix_s, evecs_s, mStar, epsForEnergyTransfer)
-                    V_a = ed.Coul_estateestate(dTilde, sTilde, eigenstateAiIndex, eigenstateAjIndex, eigenstateBiIndex, eigenstateBjIndex, cutoff, hbaromega, basisStatesMatrix_a, evecs_a, mStar, epsForEnergyTransfer)
+                    V_s = ed.Coul_4body_estateestate(dTilde, sTilde, eigenstateAiIndex, eigenstateAjIndex, eigenstateBiIndex, eigenstateBjIndex, cutoff, hbaromega, basisStatesMatrix_s, evecs_s, mStar, epsForEnergyTransfer)
+                    V_a = ed.Coul_4body_estateestate(dTilde, sTilde, eigenstateAiIndex, eigenstateAjIndex, eigenstateBiIndex, eigenstateBjIndex, cutoff, hbaromega, basisStatesMatrix_a, evecs_a, mStar, epsForEnergyTransfer)
                     VSquared_s = np.abs(V_s)**2
                     VSquared_a = np.abs(V_a)**2
                     VSquaredArray_s[eigenstateAiIndex, eigenstateAjIndex, eigenstateBiIndex, eigenstateBjIndex] = VSquared_s
@@ -328,12 +333,18 @@ def computeEnergyTransferTLineCut(hbaromega, T1T2Vals,beta1beta2Vals, Z1Z2Vals, 
                         deltaEnergy_a = ((eigenStateAiEnergy_a-eigenStateAjEnergy_a)-(eigenStateBiEnergy_a-eigenStateBjEnergy_a))/2
                         lorentzianFactor_s = computeLorentzianFactor(eigenstateAiIndex, eigenstateAjIndex, eigenstateBiIndex, eigenstateBjIndex, Es_s, Es_a, eigenstateIndextoNArraySym, eigenstateIndextoNArrayAsym, 1, GammaofN, Gamma0)
                         lorentzianFactor_a = computeLorentzianFactor(eigenstateAiIndex, eigenstateAjIndex, eigenstateBiIndex, eigenstateBjIndex, Es_s, Es_a, eigenstateIndextoNArraySym, eigenstateIndextoNArrayAsym, -1, GammaofN, Gamma0)
-                        QDot[TIndex] += VSquared_s * detailedBalance_s * deltaEnergy_s * lorentzianFactor_s + VSquared_a * detailedBalance_a * deltaEnergy_a * lorentzianFactor_a
-    QDot *= 2*np.pi/hbar/(A * SquareMetersPerSqareAngstrom) * JoulesPermeV * 2 #(last factor of two is because two moire atoms per unit cell) # outputs in Watts
-    G = np.einsum('i,i-> i', abs(QDot), abs((T1T2Vals[:,0]-T1T2Vals[:,1])**(-1)))
-    return(QDot, G)
+                        QDot_s[TIndex] += VSquared_s * detailedBalance_s * deltaEnergy_s * lorentzianFactor_s
+                        QDot_a[TIndex] += VSquared_a * detailedBalance_a * deltaEnergy_a * lorentzianFactor_a
+    QDot_s *= 2*np.pi/hbar/(A * SquareMetersPerSqareAngstrom) * JoulesPermeV * 2 #(last factor of two is because two moire atoms per unit cell) # outputs in Watts
+    QDot_a *= 2*np.pi/hbar/(A * SquareMetersPerSqareAngstrom) * JoulesPermeV * 2
+    QDot = QDot_s+QDot_a
+    G_s = np.einsum('i,i-> i', abs(QDot_s), abs((T1T2Vals[:,0]-T1T2Vals[:,1])**(-1)))
+    G_a = np.einsum('i,i-> i', abs(QDot_a), abs((T1T2Vals[:,0]-T1T2Vals[:,1])**(-1)))
+    G = G_s+G_a
+    return(QDot, G, G_s, G_a)
 
-def computeEnergyTransferTLineCutNu2(muOfTVector1, muOfTVector2, hbaromega, T1T2Vals,beta1beta2Vals, Z1Z2Vals, dTilde, sTilde, mStar, epsForEnergyTransfer, numEStatesIncluded, cutoff, A, ESingleParticle_s, ESingleParticle_a, Es_s, Es_a, evecs_s, evecs_a, basisStatesMatrix_s, basisStatesMatrix_a, GammaofN, Gamma0, eigenstateIndextoNArraySym, eigenstateIndextoNArrayAsym):
+def computeEnergyTransferTLineCutNu2(muOfTVector1, muOfTVector2, hbaromega, T1T2Vals,beta1beta2Vals, Z1Z2Vals, dTilde, mStar, epsForEnergyTransfer, numEStatesIncluded, cutoff, A, EOneBody, Es_s, Es_a, evecs_s, evecs_a, oneBodyStatesMatrix, basisStatesMatrix_s, basisStatesMatrix_a, GammaofN, Gamma0, eigenstateIndextoNArraySym, eigenstateIndextoNArrayAsym):
+    sTilde = 0 #I can go back and generalize if I want
     #fock 2 subspace(interacting)
     QDotFock2 = np.zeros(np.shape(T1T2Vals)[0])
     VSquaredArray_s = np.zeros((numEStatesIncluded, numEStatesIncluded, numEStatesIncluded, numEStatesIncluded))
@@ -350,8 +361,8 @@ def computeEnergyTransferTLineCutNu2(muOfTVector1, muOfTVector2, hbaromega, T1T2
                 for eigenstateBjIndex in range(numEStatesIncluded):
                     eigenStateBjEnergy_s = Es_s[eigenstateBjIndex]
                     eigenStateBjEnergy_a = Es_a[eigenstateBjIndex]
-                    V_s = ed.Coul_estateestate(dTilde, sTilde, eigenstateAiIndex, eigenstateAjIndex, eigenstateBiIndex, eigenstateBjIndex, cutoff, hbaromega, basisStatesMatrix_s, evecs_s, mStar, epsForEnergyTransfer)
-                    V_a = ed.Coul_estateestate(dTilde, sTilde, eigenstateAiIndex, eigenstateAjIndex, eigenstateBiIndex, eigenstateBjIndex, cutoff, hbaromega, basisStatesMatrix_a, evecs_a, mStar, epsForEnergyTransfer)
+                    V_s = ed.Coul_4body_estateestate(dTilde, sTilde, eigenstateAiIndex, eigenstateAjIndex, eigenstateBiIndex, eigenstateBjIndex, cutoff, hbaromega, basisStatesMatrix_s, evecs_s, mStar, epsForEnergyTransfer)
+                    V_a = ed.Coul_4body_estateestate(dTilde, sTilde, eigenstateAiIndex, eigenstateAjIndex, eigenstateBiIndex, eigenstateBjIndex, cutoff, hbaromega, basisStatesMatrix_a, evecs_a, mStar, epsForEnergyTransfer)
                     VSquared_s = np.abs(V_s)**2
                     VSquared_a = np.abs(V_a)**2
                     VSquaredArray_s[eigenstateAiIndex, eigenstateAjIndex, eigenstateBiIndex, eigenstateBjIndex] = VSquared_s
@@ -375,8 +386,8 @@ def computeEnergyTransferTLineCutNu2(muOfTVector1, muOfTVector2, hbaromega, T1T2
                         Z1, Z2 = Z1Z2Vals[TIndex]
                         mu1 = muOfTVector1[TIndex]
                         mu2 = muOfTVector2[TIndex]
-                        detailedBalance_s = computeDetailedBalance(eigenStateAiEnergy_s-mu1, eigenStateBiEnergy_s-mu2, beta1, beta2, Z1, Z2)
-                        detailedBalance_a = computeDetailedBalance(eigenStateAiEnergy_a-mu1, eigenStateBiEnergy_a-mu2, beta1, beta2, Z1, Z2)
+                        detailedBalance_s = computeDetailedBalance(eigenStateAiEnergy_s-2*mu1, eigenStateBiEnergy_s-2*mu2, beta1, beta2, Z1, Z2)
+                        detailedBalance_a = computeDetailedBalance(eigenStateAiEnergy_a-2*mu1, eigenStateBiEnergy_a-2*mu2, beta1, beta2, Z1, Z2)
                         deltaEnergy_s = ((eigenStateAiEnergy_s-eigenStateAjEnergy_s)-(eigenStateBiEnergy_s-eigenStateBjEnergy_s))/2
                         deltaEnergy_a = ((eigenStateAiEnergy_a-eigenStateAjEnergy_a)-(eigenStateBiEnergy_a-eigenStateBjEnergy_a))/2
                         lorentzianFactor_s = computeLorentzianFactor(eigenstateAiIndex, eigenstateAjIndex, eigenstateBiIndex, eigenstateBjIndex, Es_s, Es_a, eigenstateIndextoNArraySym, eigenstateIndextoNArrayAsym, 1, GammaofN, Gamma0)
@@ -384,126 +395,53 @@ def computeEnergyTransferTLineCutNu2(muOfTVector1, muOfTVector2, hbaromega, T1T2
                         QDotFock2[TIndex] += VSquared_s * detailedBalance_s * deltaEnergy_s * lorentzianFactor_s + VSquared_a * detailedBalance_a * deltaEnergy_a * lorentzianFactor_a
     # fock 1 subspace
     QDotFock1 = np.zeros(np.shape(T1T2Vals)[0])
-    numBasisStates_s = np.shape(basisStatesMatrix_s)[1]
-    numBasisStates_a = np.shape(basisStatesMatrix_a)[1]
-    VSquaredArray_s = np.zeros((numEStatesIncluded, numEStatesIncluded, numEStatesIncluded, numEStatesIncluded))
-    VSquaredArray_a = np.zeros((numEStatesIncluded, numEStatesIncluded, numEStatesIncluded, numEStatesIncluded))
-    for basisStateAiIndex in range(numEStatesIncluded):
-        basisStateAi_s = basisStatesMatrix_s[:, basisStateAiIndex]
-        basisStateAiEnergy_s = ESingleParticle_s[basisStateAiIndex] - hbaromega # subtract hbaromega so that the energies correspond to single-hole energies
-        nRpAi_s=basisStateAi_s[0]
-        nRmAi_s=basisStateAi_s[1]
-        nrpAi_s=basisStateAi_s[2]
-        nrmAi_s=basisStateAi_s[3]
-        basisStateAi_a = basisStatesMatrix_a[:, basisStateAiIndex]
-        basisStateAiEnergy_a = ESingleParticle_a[basisStateAiIndex] - hbaromega
-        nRpAi_a=basisStateAi_a[0]
-        nRmAi_a=basisStateAi_a[1]
-        nrpAi_a=basisStateAi_a[2]
-        nrmAi_a=basisStateAi_a[3]
-        for basisStateAjIndex in range(numEStatesIncluded):
-            basisStateAj_s = basisStatesMatrix_s[:, basisStateAjIndex]
-            basisStateAjEnergy_s = ESingleParticle_s[basisStateAjIndex] - hbaromega
-            nRpAj_s=basisStateAj_s[0]
-            nRmAj_s=basisStateAj_s[1]
-            nrpAj_s=basisStateAj_s[2]
-            nrmAj_s=basisStateAj_s[3]
-            basisStateAj_a = basisStatesMatrix_a[:, basisStateAjIndex]
-            basisStateAjEnergy_a = ESingleParticle_a[basisStateAjIndex]
-            nRpAj_a=basisStateAj_a[0]
-            nRmAj_a=basisStateAj_a[1]
-            nrpAj_a=basisStateAj_a[2]
-            nrmAj_a=basisStateAj_a[3]
-            for basisStateBiIndex in range(numEStatesIncluded):
-                basisStateBi_s = basisStatesMatrix_s[:, basisStateBiIndex]
-                basisStateBiEnergy_s = ESingleParticle_s[basisStateBiIndex] - hbaromega
-                nRpBi_s=basisStateBi_s[0]
-                nRmBi_s=basisStateBi_s[1]
-                nrpBi_s=basisStateBi_s[2]
-                nrmBi_s=basisStateBi_s[3]
-                basisStateBi_a = basisStatesMatrix_a[:, basisStateBiIndex]
-                basisStateBiEnergy_a = ESingleParticle_a[basisStateBiIndex] - hbaromega
-                nRpBi_a=basisStateBi_a[0]
-                nRmBi_a=basisStateBi_a[1]
-                nrpBi_a=basisStateBi_a[2]
-                nrmBi_a=basisStateBi_a[3]
-                for basisStateBjIndex in range(numEStatesIncluded):
-                    basisStateBj_s = basisStatesMatrix_s[:, basisStateBjIndex]
-                    basisStateBjEnergy_s = ESingleParticle_s[basisStateBjIndex] - hbaromega
-                    nRpBj_s=basisStateBj_s[0]
-                    nRmBj_s=basisStateBj_s[1]
-                    nrpBj_s=basisStateBj_s[2]
-                    nrmBj_s=basisStateBj_s[3]
-                    basisStateBj_a = basisStatesMatrix_a[:, basisStateBjIndex]
-                    basisStateBjEnergy_a = ESingleParticle_a[basisStateBjIndex] - hbaromega
-                    nRpBj_a=basisStateBj_a[0]
-                    nRmBj_a=basisStateBj_a[1]
-                    nrpBj_a=basisStateBj_a[2]
-                    nrmBj_a=basisStateBj_a[3]
-                    V_s=ed.Coul_hh_4body_generalSeparation(dTilde,sTilde,hbaromega,nRpAi_s,nRmAi_s,nrpAi_s,nrmAi_s,nRpAj_s,nRmAj_s,nrpAj_s,nrmAj_s,nRpBi_s,nRmBi_s,nrpBi_s,nrmBi_s,nRpBj_s,nRmBj_s,nrpBj_s,nrmBj_s,mStar,epsForEnergyTransfer)
-                    VSquaredArray_s[basisStateAiIndex, basisStateAjIndex, basisStateBiIndex, basisStateBjIndex]= abs(V_s)**2
-                    V_a=ed.Coul_hh_4body_generalSeparation(dTilde,sTilde,hbaromega,nRpAi_a,nRmAi_a,nrpAi_a,nrmAi_a,nRpAj_a,nRmAj_a,nrpAj_a,nrmAj_a,nRpBi_a,nRmBi_a,nrpBi_a,nrmBi_a,nRpBj_a,nRmBj_a,nrpBj_a,nrmBj_a,mStar,epsForEnergyTransfer)
-                    VSquaredArray_a[basisStateAiIndex, basisStateAjIndex, basisStateBiIndex, basisStateBjIndex]= abs(V_a)**2
-    for basisStateAiIndex in range(numEStatesIncluded):
-        basisStateAi_s = basisStatesMatrix_s[:, basisStateAiIndex]
-        basisStateAiEnergy_s = ESingleParticle_s[basisStateAiIndex]
-        NAi_s = int(1.01*basisStateAiEnergy_s/hbaromega-2)
-        basisStateAi_a = basisStatesMatrix_a[:, basisStateAiIndex]
-        basisStateAiEnergy_a = ESingleParticle_a[basisStateAiIndex]
-        NAi_a = int(1.01*basisStateAiEnergy_a/hbaromega-2)
-        for basisStateAjIndex in range(numEStatesIncluded):
-            basisStateAj_s = basisStatesMatrix_s[:, basisStateAjIndex]
-            basisStateAjEnergy_s = ESingleParticle_s[basisStateAjIndex]
-            NAj_s = int(1.01*basisStateAjEnergy_s/hbaromega-2)
-            basisStateAj_a = basisStatesMatrix_a[:, basisStateAjIndex]
-            basisStateAjEnergy_a = ESingleParticle_a[basisStateAjIndex]
-            NAj_a = int(1.01*basisStateAjEnergy_a/hbaromega-2)
-            for basisStateBiIndex in range(numEStatesIncluded):
-                basisStateBi_s = basisStatesMatrix_s[:, basisStateBiIndex]
-                basisStateBiEnergy_s = ESingleParticle_s[basisStateBiIndex]
-                NBi_s = int(1.01*basisStateBiEnergy_s/hbaromega-2)
-                basisStateBi_a = basisStatesMatrix_a[:, basisStateBiIndex]
-                basisStateBiEnergy_a = ESingleParticle_a[basisStateBiIndex]
-                NBi_a = int(1.01*basisStateBiEnergy_a/hbaromega-2)
-                for basisStateBjIndex in range(numEStatesIncluded):
-                    basisStateBj_s = basisStatesMatrix_s[:, basisStateBjIndex]
-                    basisStateBjEnergy_s = ESingleParticle_s[basisStateBjIndex]
-                    NBj_s = int(1.01*basisStateBjEnergy_s/hbaromega-2)
-                    basisStateBj_a = basisStatesMatrix_a[:, basisStateBjIndex]
-                    basisStateBjEnergy_a = ESingleParticle_a[basisStateBjIndex]
-                    NBj_a = int(1.01*basisStateBjEnergy_a/hbaromega-2)
-                    VSquared_s = VSquaredArray_s[basisStateAiIndex,basisStateAjIndex,basisStateBiIndex,basisStateBjIndex]
-                    VSquared_a = VSquaredArray_a[basisStateAiIndex,basisStateAjIndex,basisStateBiIndex,basisStateBjIndex]
+    for oneBodyStateAiIndex in range(numEStatesIncluded):
+        oneBodyStateAi = oneBodyStatesMatrix[:, oneBodyStateAiIndex]
+        oneBodyStateAiEnergy = EOneBody[oneBodyStateAiIndex]
+        npAi=oneBodyStateAi[0]
+        nmAi=oneBodyStateAi[1]
+        for oneBodyStateAjIndex in range(numEStatesIncluded):
+            oneBodyStateAj = oneBodyStatesMatrix[:, oneBodyStateAjIndex]
+            oneBodyStateAjEnergy = EOneBody[oneBodyStateAjIndex]
+            npAj=oneBodyStateAj[0]
+            nmAj=oneBodyStateAj[1]
+            for oneBodyStateBiIndex in range(numEStatesIncluded):
+                oneBodyStateBi = oneBodyStatesMatrix[:, oneBodyStateBiIndex]
+                oneBodyStateBiEnergy = EOneBody[oneBodyStateBiIndex]
+                npBi=oneBodyStateBi[0]
+                nmBi=oneBodyStateBi[1]
+                for oneBodyStateBjIndex in range(numEStatesIncluded):
+                    oneBodyStateBj = oneBodyStatesMatrix[:, oneBodyStateBjIndex]
+                    oneBodyStateBjEnergy = EOneBody[oneBodyStateBjIndex]
+                    npBj=oneBodyStateBj[0]
+                    nmBj=oneBodyStateBj[1]
+                    V=ed.Coul_hh_2body_individualQuantumNumbers_verticalSeparation(hbaromega,dTilde, npAi,nmAi,npBi,nmBi,npAj,nmAj,npBj,nmBj, mStar,epsForEnergyTransfer)
                     for TIndex in range(np.shape(T1T2Vals)[0]):
                         beta1, beta2 = beta1beta2Vals[TIndex]
                         Z1, Z2 = Z1Z2Vals[TIndex]
                         mu1 = muOfTVector1[TIndex]
                         mu2 = muOfTVector2[TIndex]
-                        detailedBalance_s = computeDetailedBalance(basisStateAiEnergy_s-mu1, basisStateBiEnergy_s-mu2, beta1, beta2, Z1, Z2)
-                        detailedBalance_a = computeDetailedBalance(basisStateAiEnergy_a-mu1, basisStateBiEnergy_a-mu2, beta1, beta2, Z1, Z2)
-                        deltaEnergy_s = ((basisStateAiEnergy_s-basisStateAjEnergy_s)-(basisStateBiEnergy_s-basisStateBjEnergy_s))/2
-                        deltaEnergy_a = ((basisStateAiEnergy_a-basisStateAjEnergy_a)-(basisStateBiEnergy_a-basisStateBjEnergy_a))/2
-                        detuning_s = (abs(basisStateAiEnergy_s-basisStateAjEnergy_s)-abs(basisStateBiEnergy_s-basisStateBjEnergy_s))
-                        detuning_a = (abs(basisStateAiEnergy_a-basisStateAjEnergy_a)-abs(basisStateBiEnergy_a-basisStateBjEnergy_a))
-                        GammaAi_s = GammaofN[NAi_s] #doesnt work once bands start crossing, need to revise
-                        GammaAj_s = GammaofN[NAj_s] #doesnt work once bands start crossing
-                        GammaBi_s = GammaofN[NBi_s] #doesnt work once bands start crossing, need to revise
-                        GammaBj_s = GammaofN[NBj_s] #doesnt work once bands start crossing
-                        Gamma_s = GammaAi_s+GammaAj_s+GammaBi_s+GammaBj_s+4*Gamma0
-                        GammaAi_a = GammaofN[NAi_a] #doesnt work once bands start crossing, need to revise
-                        GammaAj_a = GammaofN[NAj_a] #doesnt work once bands start crossing
-                        GammaBi_a = GammaofN[NBi_a] #doesnt work once bands start crossing, need to revise
-                        GammaBj_a = GammaofN[NBj_a] #doesnt work once bands start crossing
-                        Gamma_a = GammaAi_a+GammaAj_a+GammaBi_a+GammaBj_a+4*Gamma0
-                        lorentzianFactor_s = (1/np.pi)*(Gamma_s/2)/((detuning_s)**2+(Gamma_s/2)**2)
-                        lorentzianFactor_a = (1/np.pi)*(Gamma_a/2)/((detuning_a)**2+(Gamma_a/2)**2)
-                        QDotFock1[TIndex] += VSquared_s * detailedBalance_s * deltaEnergy_s * lorentzianFactor_s + VSquared_a * detailedBalance_a * deltaEnergy_a * lorentzianFactor_a
-    QDot = (QDotFock1*(1/2) + QDotFock2)*2*np.pi/hbar/(A * SquareMetersPerSqareAngstrom) * JoulesPermeV * 2 #(last factor of two is because two moire atoms per unit cell) # outputs in Watts
-    G = np.einsum('i,i-> i', abs(QDot), abs((T1T2Vals[:,0]-T1T2Vals[:,1])**(-1)))
-    return(QDot, G)
+                        detailedBalance = computeDetailedBalance(oneBodyStateAiEnergy-mu1, oneBodyStateBiEnergy-mu2, beta1, beta2, Z1, Z2)
+                        deltaEnergy = ((oneBodyStateAiEnergy-oneBodyStateAjEnergy)-(oneBodyStateBiEnergy-oneBodyStateBjEnergy))/2
+                        detuning = abs(((oneBodyStateAiEnergy-oneBodyStateAjEnergy)+(oneBodyStateBiEnergy-oneBodyStateBjEnergy)))
+                        GammaAi = GammaofN[npAi+nmAi] #doesnt work once bands start crossing, need to revise
+                        GammaAj = GammaofN[npAj+nmAj] #doesnt work once bands start crossing
+                        GammaBi = GammaofN[npBi+nmBi] #doesnt work once bands start crossing, need to revise
+                        GammaBj = GammaofN[npBj+nmBj] #doesnt work once bands start crossing
+                        Gamma = GammaAi+GammaAj+GammaBi+GammaBj+4*Gamma0
+                        lorentzianFactor = (1/np.pi)*(Gamma/2)/((detuning)**2+(Gamma/2)**2)
+                        QDotFock1[TIndex] += abs(V)**2 * detailedBalance * deltaEnergy * lorentzianFactor
+    QDotFock1*=2*np.pi/hbar/(A * SquareMetersPerSqareAngstrom) * JoulesPermeV * 2 #(last factor of two is because two moire atoms per unit cell) # outputs in Watts
+    QDotFock2*=2*np.pi/hbar/(A * SquareMetersPerSqareAngstrom) * JoulesPermeV * 2
+    QDot = QDotFock1 + QDotFock2
+    GFock1 = np.einsum('i,i-> i', abs(QDotFock1), abs((T1T2Vals[:,0]-T1T2Vals[:,1])**(-1)))
+    GFock2 = np.einsum('i,i-> i', abs(QDotFock2), abs((T1T2Vals[:,0]-T1T2Vals[:,1])**(-1)))
+    G = GFock1+GFock2
+    return(QDot, G, GFock1, GFock2)
 
 def computeLineCutInT(material, theta, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0):
     a, V1, V2, V3, phi, mStar = cmp.materialContinuumModelParameters(material)
+    print()
     print('a, V1, V2, V3, phi, mStar:', a, V1, V2, V3, phi, mStar)
     aM, gamma, hbaromega, l, coulombEnergy, ratio = computeParameters(theta, a, V1, V2, V3, mStar, epsForEnergyTransfer, modStrengthFactor)
     A = (aM**2) * math.sqrt(3)/2 # real space moire unit cell area
@@ -527,6 +465,8 @@ def computeLineCutInT(material, theta, nu, modStrengthFactor, N, numEStatesInclu
     basisStatesMatrix_s = np.reshape(states_s, (4,np.shape(basis_s[0])[0])) #basis states matrix has each column a two body eigenstate  with each row its quantum numbers (nR+,nR-,nr+,nr-)
     basisStatesMatrix_a = np.reshape(states_a, (4,np.shape(basis_a[0])[0]))
     Es_s, evecs_s, Es_a, evecs_a = ed.ED_hh(basis_s, basis_a, hbaromega, mStar,epsForED)
+    print('Es_s[0:10]:', Es_s[0:10]/hbaromega)
+    print('Es_a[0:10]:', Es_a[0:10]/hbaromega)
     print('numStates:', (np.shape(Es_s)[0] + np.shape(Es_a)[0]))
     #the following several lines just serve to create an index map between noninteracting atomic states and moiré bands
     eigenstateIndextoNArraySym, evecsIGNORE, eigenstateIndextoNArrayAsym, evecs_aIGNORE = ed.ED_hh(basis_s, basis_a, hbaromega, mStar, epsForEnergyTransfer) #this creates a dummy basis so I know how to map the indices of the interactiona and noninteracting bases
@@ -540,64 +480,71 @@ def computeLineCutInT(material, theta, nu, modStrengthFactor, N, numEStatesInclu
     Z1Z2Vals = np.zeros_like(T1T2Vals)
     if nu == 2:
         #only one calculation to do in this case, no interacting vs noninteracting
+        oneBodyBasis = ed.oneBody_basis(N, hbaromega)
+        EOneBody = oneBodyBasis[0]
+        print('EOneBody[0:10]:', EOneBody[0:10]/hbaromega)
+        oneBodyStates = np.concatenate(oneBodyBasis[1:3]).flatten()
+        oneBodyStatesMatrix = np.reshape(oneBodyStates, (2,np.shape(EOneBody)[0])) #basis states matrix has each column a one body eigenstate  with each row its quantum numbers (n1+,n1-)
         print('starting muOfTVector1 \n')
         start = timeit.default_timer()
-        muOfTVector1 = computeMuOfTVector(T1T2Vals[:,0], hbaromega, 1, nu, muOfTPrecision, ESingleParticle_s, ESingleParticle_a, Es_s, Es_a)
+        muOfTVector1 = computeMuOfTVector(T1T2Vals[:,0], hbaromega, 1, nu, muOfTPrecision, EOneBody, Es_s, Es_a)
         stop = timeit.default_timer()
         print('time for muOfTVector1:', stop - start)
-        plt.plot(Kb*TLineCutVals/hbaromega, (muOfTVector1/hbaromega))
-        muOfTVector2 = muOfTVector1 #computeMuOfTVector(T1T2Vals[:,1], hbaromega, 1, nu, muOfTPrecision, ESingleParticle_s, ESingleParticle_a, Es_s, Es_a) #might be unnecessary to calculate different muoft vectors for the two cases because they are so similiar anyway
+        muOfTVector2 = muOfTVector1
         for i in range(np.shape(Z1Z2Vals)[0]):
-            T1 = T1T2Vals[i,0]
-            T2 = T1T2Vals[i,1]
             beta1 = beta1beta2Vals[i,0]
             beta2 = beta1beta2Vals[i,1]
-            Z1 = computePartitionFunction(nu, beta1, muOfTVector1[i], Es_s, Es_a, ESingleParticle_s, ESingleParticle_a)
-            Z2 = computePartitionFunction(nu, beta2, muOfTVector2[i], Es_s, Es_a, ESingleParticle_s, ESingleParticle_a)
+            Z1 = computePartitionFunction(nu, beta1, muOfTVector1[i], Es_s, Es_a, EOneBody)
+            Z2 = computePartitionFunction(nu, beta2, muOfTVector2[i], Es_s, Es_a, EOneBody)
             Z1Z2Vals[i,0]+=Z1
             Z1Z2Vals[i,1]+=Z2
-        GLineCutInTofdandsNu2 = np.zeros((np.shape(dVals)[0], np.shape(sVals)[0], numTVals))
+        GLineCutInTofdandsNu2Fock1 = np.zeros((np.shape(dVals)[0], np.shape(sVals)[0], numTVals))
+        GLineCutInTofdandsNu2Fock2 = np.zeros((np.shape(dVals)[0], np.shape(sVals)[0], numTVals))
         start = timeit.default_timer()
         for dIndex in range(np.shape(dVals)[0]):
             dTilde=dTildeVals[dIndex]
             for sIndex in range(np.shape(sVals)[0]):
                 sTilde=sTildeVals[sIndex]
-                QDot, GLineCutInTVals = computeEnergyTransferTLineCutNu2(muOfTVector1, muOfTVector2, hbaromega, T1T2Vals,beta1beta2Vals, Z1Z2Vals, dTilde, sTilde, mStar, epsForEnergyTransfer, numEStatesIncluded, cutoff, A, ESingleParticle_s, ESingleParticle_a, Es_s, Es_a, evecs_s, evecs_a, basisStatesMatrix_s, basisStatesMatrix_a, GammaofN, Gamma0, eigenstateIndextoNArraySym, eigenstateIndextoNArrayAsym)
-                GLineCutInTofdandsNu2[dIndex, sIndex] = GLineCutInTVals
+                QDot, GLineCutInTVals, GLineCutInTValsFock1, GLineCutInTValsFock2 = computeEnergyTransferTLineCutNu2(muOfTVector1, muOfTVector2, hbaromega, T1T2Vals,beta1beta2Vals, Z1Z2Vals, dTilde, mStar, epsForEnergyTransfer, numEStatesIncluded, cutoff, A, EOneBody, Es_s, Es_a, evecs_s, evecs_a, oneBodyStatesMatrix, basisStatesMatrix_s, basisStatesMatrix_a, GammaofN, Gamma0, eigenstateIndextoNArraySym, eigenstateIndextoNArrayAsym)
+                GLineCutInTofdandsNu2Fock1[dIndex, sIndex] = GLineCutInTValsFock1
+                GLineCutInTofdandsNu2Fock2[dIndex, sIndex] = GLineCutInTValsFock2
         stop = timeit.default_timer()
+        GLineCutInTofdandsNu2 = GLineCutInTofdandsNu2Fock1+GLineCutInTofdandsNu2Fock2
         print('Time for GLineCutInT: ', stop - start)
         np.save(dataSaveDir+'GLineCutInTofdandsNu2%stheta=%sMod=%dEpsilonED=%ddMin=%ddMax=%dnumdVals=%dsMin=%dsMax=%dnumsVals=%dN=%dIncluded=%dTMin=%dTMax=%dnumTVals=%dGamma0=%d' % (date, theta, modStrengthFactor, epsForED, np.min(dVals), np.max(dVals), np.shape(dVals)[0],np.min(sVals), np.max(sVals), np.shape(sVals)[0], N, numEStatesIncluded, TMin, TMax, numTVals, Gamma0), GLineCutInTofdandsNu2)
-        return(GLineCutInTofdandsNu2)
+        return(GLineCutInTofdandsNu2, GLineCutInTofdandsNu2Fock1, GLineCutInTofdandsNu2Fock2, muOfTVector1/hbaromega)
     if nu == 4:
         for i in range(np.shape(Z1Z2Vals)[0]):
-            T1 = T1T2Vals[i,0]
-            T2 = T1T2Vals[i,1]
             beta1 = beta1beta2Vals[i,0]
             beta2 = beta1beta2Vals[i,1]
-            Z1 = computePartitionFunction(nu, beta1, 0, Es_s, Es_a, ESingleParticle_s, ESingleParticle_a)
-            Z2 = computePartitionFunction(nu, beta2, 0, Es_s, Es_a, ESingleParticle_s, ESingleParticle_a)
+            Z1 = computePartitionFunction(nu, beta1, 0, Es_s, Es_a)
+            Z2 = computePartitionFunction(nu, beta2, 0, Es_s, Es_a)
             Z1Z2Vals[i,0]+=Z1
             Z1Z2Vals[i,1]+=Z2
         # compute interacting and non-interacting separately
-        GLineCutInTofdands = np.zeros((np.shape(dVals)[0], np.shape(sVals)[0], numTVals))
+        GLineCutInTofdands_s = np.zeros((np.shape(dVals)[0], np.shape(sVals)[0], numTVals))
+        GLineCutInTofdands_a = np.zeros((np.shape(dVals)[0], np.shape(sVals)[0], numTVals))
         ### Interacting with local two-body interaction
         start = timeit.default_timer()
         for dIndex in range(np.shape(dVals)[0]):
             dTilde=dTildeVals[dIndex]
             for sIndex in range(np.shape(sVals)[0]):
                 sTilde=sTildeVals[sIndex]
-                QDot, GLineCutInTVals = computeEnergyTransferTLineCut(hbaromega, T1T2Vals,beta1beta2Vals, Z1Z2Vals, dTilde, sTilde, mStar, epsForEnergyTransfer, numEStatesIncluded, cutoff, A, Es_s, Es_a, evecs_s, evecs_a, basisStatesMatrix_s, basisStatesMatrix_a, GammaofN, Gamma0, eigenstateIndextoNArraySym, eigenstateIndextoNArrayAsym)
-                GLineCutInTofdands[dIndex, sIndex] = GLineCutInTVals
+                QDot, GLineCutInTVals, GLineCutInTVals_s, GLineCutInTVals_a = computeEnergyTransferTLineCut(hbaromega, T1T2Vals,beta1beta2Vals, Z1Z2Vals, dTilde, sTilde, mStar, epsForEnergyTransfer, numEStatesIncluded, cutoff, A, Es_s, Es_a, evecs_s, evecs_a, basisStatesMatrix_s, basisStatesMatrix_a, GammaofN, Gamma0, eigenstateIndextoNArraySym, eigenstateIndextoNArrayAsym)
+                GLineCutInTofdands_s[dIndex, sIndex] = GLineCutInTVals_s
+                GLineCutInTofdands_a[dIndex, sIndex] = GLineCutInTVals_a
         stop = timeit.default_timer()
+        GLineCutInTofdands = GLineCutInTofdands_s+GLineCutInTofdands_a
         print('Time for interacting: ', stop - start)
         #Noninteracting
-        GLineCutInTofdandsNoninteracting = np.zeros((np.shape(dVals)[0], np.shape(sVals)[0], numTVals))
+        GLineCutInTofdandsNoninteracting_s = np.zeros((np.shape(dVals)[0], np.shape(sVals)[0], numTVals))
+        GLineCutInTofdandsNoninteracting_a = np.zeros((np.shape(dVals)[0], np.shape(sVals)[0], numTVals))
         Z1Z2ValsNonint = np.zeros_like(T1T2Vals)
         for i in range(np.shape(Z1Z2ValsNonint)[0]):
             beta1 = beta1beta2Vals[i,0]
             beta2 = beta1beta2Vals[i,1]
-            Z1=np.exp(4*hbaromega*beta1)/(np.exp(hbaromega*beta1)-1)**4*np.exp(-2*hbaromega*beta1)
-            Z2=np.exp(4*hbaromega*beta2)/(np.exp(hbaromega*beta2)-1)**4*np.exp(-2*hbaromega*beta2)
+            Z1=(2*np.sinh(hbaromega*beta1/2))**(-4)#np.exp(4*hbaromega*beta1)/(np.exp(hbaromega*beta1)-1)**4*np.exp(-2*hbaromega*beta1)
+            Z2=(2*np.sinh(hbaromega*beta2/2))**(-4)#np.exp(4*hbaromega*beta2)/(np.exp(hbaromega*beta2)-1)**4*np.exp(-2*hbaromega*beta2)
             Z1Z2ValsNonint[i,0]+=Z1
             Z1Z2ValsNonint[i,1]+=Z2
         start = timeit.default_timer()
@@ -605,14 +552,18 @@ def computeLineCutInT(material, theta, nu, modStrengthFactor, N, numEStatesInclu
             dTilde=dTildeVals[dIndex]
             for sIndex in range(np.shape(sVals)[0]):
                 sTilde=dTildeVals[sIndex]
-                QDot, GLineCutInTVals = computeEnergyTransferTLineCutSingleParticle(hbaromega, T1T2Vals,beta1beta2Vals, Z1Z2Vals, dTilde, sTilde, mStar, epsForEnergyTransfer, numEStatesIncluded, A, ESingleParticle_s, ESingleParticle_a, basisStatesMatrix_s, basisStatesMatrix_a, GammaofN, Gamma0, eigenstateIndextoNArraySym, eigenstateIndextoNArrayAsym)
-                GLineCutInTofdandsNoninteracting[dIndex, sIndex] = GLineCutInTVals
+                QDot, GLineCutInTValsNoninteracting,  GLineCutInTValsNoninteracting_s, GLineCutInTValsNoninteracting_a = computeEnergyTransferTLineCutSingleParticle(hbaromega, T1T2Vals,beta1beta2Vals, Z1Z2ValsNonint, dTilde, sTilde, mStar, epsForEnergyTransfer, numEStatesIncluded, A, ESingleParticle_s, ESingleParticle_a, basisStatesMatrix_s, basisStatesMatrix_a, GammaofN, Gamma0)
+                GLineCutInTofdandsNoninteracting_s[dIndex, sIndex] = GLineCutInTValsNoninteracting_s
+                GLineCutInTofdandsNoninteracting_a[dIndex, sIndex] = GLineCutInTValsNoninteracting_a
+        GLineCutInTofdandsNoninteracting = GLineCutInTofdandsNoninteracting_s + GLineCutInTofdandsNoninteracting_a
         stop = timeit.default_timer()
         print('Time for noninteracting: ', stop - start)
-        GLineCutInTofdandsInteractingandSingleParticle = np.stack((GLineCutInTofdands,GLineCutInTofdandsNoninteracting))
+        GLineCutInTofdandsInteractingandSingleParticle_s = np.stack((GLineCutInTofdands_s,GLineCutInTofdandsNoninteracting_s))
+        GLineCutInTofdandsInteractingandSingleParticle_a = np.stack((GLineCutInTofdands_a,GLineCutInTofdandsNoninteracting_a))
+        GLineCutInTofdandsInteractingandSingleParticle = GLineCutInTofdandsInteractingandSingleParticle_s+GLineCutInTofdandsInteractingandSingleParticle_a
         GLineCutInTofdandsInteractingandSingleParticleSaveName = str(dataSaveDir+'GLineCutInTofdandsInteractingandSingleParticle%stheta=%sMod=%dEpsilonED=%ddMin=%ddMax=%dnumdVals=%dsMin=%dsMax=%dnumsVals=%dN=%dIncluded=%dTMin=%dTMax=%dnumTVals=%dGamma0=%d' % (date, theta, modStrengthFactor, epsForED, np.min(dVals), np.max(dVals), np.shape(dVals)[0],np.min(sVals), np.max(sVals), np.shape(sVals)[0], N, numEStatesIncluded, TMin, TMax, numTVals, Gamma0))
         np.save(GLineCutInTofdandsInteractingandSingleParticleSaveName, GLineCutInTofdandsInteractingandSingleParticle)
-        return(GLineCutInTofdandsInteractingandSingleParticle)
+        return(GLineCutInTofdandsInteractingandSingleParticle, GLineCutInTofdandsInteractingandSingleParticle_s, GLineCutInTofdandsInteractingandSingleParticle_a)
 """  
 if computeGLineCutindFromScratch == True:
     #dLine cut

@@ -1,5 +1,5 @@
 #%%
-import EDTwoElectron2DHarmonicAtomModuleCOMandRelBasis as ed
+import EDandMatrixElementsModule as ed
 import continuumModelBandsModule as cmb
 import numpy as np
 import scipy as sp

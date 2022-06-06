@@ -9,7 +9,6 @@ date = today.strftime("%b%d%Y")
 mpl.rcParams['pdf.fonttype'] = 42
 mpl.rcParams['ps.fonttype'] = 42
 plt.rcParams.update({'font.size': 12})
-plt.rcParams["figure.figsize"] = (3.375,3.00)
 mpl.rcParams['font.family'] = 'Arial'
 mpl.rcParams["savefig.jpeg_quality"]
 #plt.rcParams['figure.constrained_layout.use'] = True
@@ -39,6 +38,7 @@ def produceEDSpectrumPlot(lambdaVals, megaEigVals_s, megaEigVals_a, numLevelstoP
         ax.plot(lambdaVals, (megaEigVals_a[ELevelIndex]-megaEigVals_s[0])/omgh, linewidth='1.2', color = 'black', linestyle = 'dashed')
     ax.set(xlabel=r'$\lambda$', ylabel = r'$(E-E_{g})/(\hbar\Omega)$', ylim = (-0.2,3.2))
     ax.margins(0)
+    ax.legend(frameon=False, loc='best')
     ax.tick_params(which='both',direction='in')
     plt.savefig(figSaveDir+'EDSpectrumGap%s.pdf' % date, bbox_inches='tight')
     plt.show()
@@ -49,5 +49,52 @@ def produceSingleMoireAtomGLineCutInTPlot(GVals, TVals, theta, dTilde):
     ax.set(xlabel=r'$T$(K)', ylabel=r'$G$(MWm$^{-2}$K$^{-1}$)')
     ax.margins(0)
     ax.tick_params(which='both',direction='in')
-    #plt.savefig(figSaveDir+'moireAtomGTLineCut%stheta=%d' % (date, theta))
+    plt.savefig(figSaveDir+'moireAtomGTLineCut%stheta=%d' % (date, theta), bbox_inches='tight')
+    plt.show()
+
+def produceMultipleThetaMoireAtomGLineCutInTPlot(GVals1,GVals1Alt1, GVals1Alt2, GVals2, GVals2Alt1, GVals2Alt2, GVals3,GVals3Alt1,GVals3Alt2,GVals4,GVals4Alt1,GVals4Alt2,TVals,d,N,numEStatesIncluded,nu,interactionIndex=0):
+    fig, ax = plt.subplots()
+    if nu == 2:
+        c1='indigo'
+        c2='teal'
+        c3='firebrick'
+        c4='deepskyblue'
+    if nu ==4:
+        c1='black'
+        c2='blue'
+        c3='green'
+        c4='m'
+    ax.plot(TVals, GVals1*10**(-6), color = c1, label =r'$1^{\circ}$')
+    ax.plot(TVals, GVals1Alt1*10**(-6), color = c1, linestyle='dashed')
+    ax.plot(TVals, GVals1Alt2*10**(-6), color = c1, linestyle='dotted')
+    ax.plot(TVals, GVals2*10**(-6), color = c2, label =r'$2^{\circ}$')
+    ax.plot(TVals, GVals2Alt1*10**(-6), color = c2, linestyle='dashed')
+    ax.plot(TVals, GVals2Alt2*10**(-6), color = c2, linestyle='dotted')
+    ax.plot(TVals, GVals3*10**(-6), color = c3, label =r'$3^{\circ}$')
+    ax.plot(TVals, GVals3Alt1*10**(-6), color = c3, linestyle='dashed')
+    ax.plot(TVals, GVals3Alt2*10**(-6), color = c3, linestyle='dotted')
+    ax.plot(TVals, GVals4*10**(-6), color = c4, label =r'$4^{\circ}$')
+    ax.plot(TVals, GVals4Alt1*10**(-6), color = c4, linestyle='dashed')
+    ax.plot(TVals, GVals4Alt2*10**(-6), color = c4, linestyle='dotted')
+    ax.set(xlabel=r'$T$(K)', ylabel=r'$G$(MWm$^{-2}$K$^{-1}$)')
+    ax.legend(frameon=False, loc='best')
+    ax.margins(0)
+    ax.tick_params(which='both',direction='in')
+    if nu == 2:
+        plt.savefig(figSaveDir+'moireAtomGTLineCutMultiTheta%sd=%dN=%dnumEStatesIncluded=%dnu=%d' % (date, d, N, numEStatesIncluded, nu), bbox_inches='tight')
+    if nu == 4:
+        if interactionIndex == 0:
+            interaction='interacting'
+        if interactionIndex == 1:
+            interaction='Noninteracting'
+        plt.savefig(figSaveDir+'moireAtomGTLineCutMultiTheta%sd=%dN=%dnumEStatesIncluded=%dnu=%d%s' % (date, d, N, numEStatesIncluded, nu, interaction), bbox_inches='tight')
+    plt.show()
+
+def produceMuofTPlot(TVals, muofTVector):
+    fig, ax = plt.subplots()
+    ax.plot(TVals, muofTVector, color = 'black')
+    ax.set(xlabel=r'$T$(K)', ylabel=r'$\mu(T)/(\hbar\Omega)$')
+    ax.margins(0)
+    ax.tick_params(which='both',direction='in')
+    plt.savefig(figSaveDir+'muOfT%s' % (date), bbox_inches='tight')
     plt.show()
