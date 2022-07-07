@@ -22,7 +22,7 @@ def produceEDSpectrumPlot(lambdaVals, megaEigVals_s, megaEigVals_a, numLevelstoP
     #just ground state
     fig, ax = plt.subplots()
     ax.plot(lambdaVals, lambdaVals*np.sqrt(np.pi/2)+2, color ='grey', label = 'linear approx.') # first order perturbation theory prediction
-    ax.plot(lambdaVals, heisenbergEnergies[1], color = 'blue', label = 'Heisenberg approx.') #heisenberg energy minimization prediction
+    #ax.plot(lambdaVals, heisenbergEnergies[1], color = 'blue', label = 'Heisenberg approx.') #heisenberg energy minimization prediction
     ax.plot(lambdaVals, megaEigVals_s[0]/omgh, color = 'black', label = 'exact')
     ax.margins(0)
     ax.legend(frameon=False)
@@ -43,16 +43,16 @@ def produceEDSpectrumPlot(lambdaVals, megaEigVals_s, megaEigVals_a, numLevelstoP
     plt.savefig(figSaveDir+'EDSpectrumGap%s.pdf' % date, bbox_inches='tight')
     plt.show()
 
-def produceSingleMoireAtomGLineCutInTPlot(GVals, TVals, theta, dTilde):
+def produceSingleMoireAtomGLineCutInTPlot(GVals, TVals, theta, d):
     fig, ax = plt.subplots()
     ax.plot(TVals, GVals*10**(-6), color = 'black')
     ax.set(xlabel=r'$T$(K)', ylabel=r'$G$(MWm$^{-2}$K$^{-1}$)')
     ax.margins(0)
     ax.tick_params(which='both',direction='in')
-    plt.savefig(figSaveDir+'moireAtomGTLineCut%stheta=%d' % (date, theta), bbox_inches='tight')
+    plt.savefig(figSaveDir+'moireAtomGTLineCut%stheta=%dd=%s' % (date, theta, d), bbox_inches='tight')
     plt.show()
 
-def produceMultipleThetaMoireAtomGLineCutInTPlot(GVals1,GVals1Alt1, GVals1Alt2, GVals2, GVals2Alt1, GVals2Alt2, GVals3,GVals3Alt1,GVals3Alt2,GVals4,GVals4Alt1,GVals4Alt2,TVals,d,N,numEStatesIncluded,nu,interactionIndex=0):
+def produceMultipleThetaMoireAtomGLineCutInTPlot(GVals1, GVals2, GVals3, GVals4, TVals,d,N,numEStatesIncluded,nu,interactionIndex=0):
     fig, ax = plt.subplots()
     if nu == 2:
         c1='indigo'
@@ -65,17 +65,9 @@ def produceMultipleThetaMoireAtomGLineCutInTPlot(GVals1,GVals1Alt1, GVals1Alt2, 
         c3='green'
         c4='m'
     ax.plot(TVals, GVals1*10**(-6), color = c1, label =r'$1^{\circ}$')
-    ax.plot(TVals, GVals1Alt1*10**(-6), color = c1, linestyle='dashed')
-    ax.plot(TVals, GVals1Alt2*10**(-6), color = c1, linestyle='dotted')
     ax.plot(TVals, GVals2*10**(-6), color = c2, label =r'$2^{\circ}$')
-    ax.plot(TVals, GVals2Alt1*10**(-6), color = c2, linestyle='dashed')
-    ax.plot(TVals, GVals2Alt2*10**(-6), color = c2, linestyle='dotted')
     ax.plot(TVals, GVals3*10**(-6), color = c3, label =r'$3^{\circ}$')
-    ax.plot(TVals, GVals3Alt1*10**(-6), color = c3, linestyle='dashed')
-    ax.plot(TVals, GVals3Alt2*10**(-6), color = c3, linestyle='dotted')
     ax.plot(TVals, GVals4*10**(-6), color = c4, label =r'$4^{\circ}$')
-    ax.plot(TVals, GVals4Alt1*10**(-6), color = c4, linestyle='dashed')
-    ax.plot(TVals, GVals4Alt2*10**(-6), color = c4, linestyle='dotted')
     ax.set(xlabel=r'$T$(K)', ylabel=r'$G$(MWm$^{-2}$K$^{-1}$)')
     ax.legend(frameon=False, loc='best')
     ax.margins(0)

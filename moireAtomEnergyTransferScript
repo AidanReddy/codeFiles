@@ -6,17 +6,19 @@ import plotModule as pm
 material = 'MoS2'
 theta = 4
 modStrengthFactor = 1
-nu = 2
-N = 7 # cuts off number of energy levels beyond ground state(note that this is NOT equivalent to the number of states since the levels are degenerate)
-numEStatesIncluded = 7
-Gamma0 = 1  # 5 #mev, line broadening factor
+nu = 4
+N = 5 # cuts off number of energy levels beyond ground state(note that this is NOT equivalent to the number of states since the levels are degenerate)
+numEStatesIncluded = 30
+print('test 1')
+Gamma0 = 20  # 5 #mev, line broadening factor
 TMin = 30
 TMax = 1000 # * theta
-numTVals = 100 #70
+numTVals = 30 #70
 TVals = np.linspace(TMin, TMax, numTVals)
 muOfTPrecision = 0.001
+numShellsForGammaofN = 12
 
-cutoff = 0.01
+cutoff = 0.001
 
 epsilonPerp = 3.76
 epsilonPar = 6.93
@@ -27,6 +29,7 @@ dielectricConstant = epsilonEff
 epsForED = dielectricConstant
 epsForEnergyTransfer = dielectricConstant
 
+saveData = False
 computeGLineCutinTFromScratch = True
 computeGLineCutindFromScratch = False
 computeGLineCutinsFromScratch = False
@@ -34,8 +37,8 @@ severalThetaCalculation = False
 singleThetaCalculation = True
 
 dMin = 0
-dMax = 20
-numdVals = 2
+dMax = 0
+numdVals = 1
 dVals = np.linspace(dMin, dMax, numdVals)
 
 sMin = 0
@@ -48,29 +51,33 @@ interactionIndex = 0 #0 is interacting, 1 is noninteracting
 
 if singleThetaCalculation == True:
     if nu == 2:
-        GLineCutInTofdands, GLineCutInTofdandsFock1, GLineCutInTofdandsFock2, muOfTVector = met.computeLineCutInT(material, 1, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0)
+        GLineCutInTofdands, muOfTVector = met.computeLineCutInT(material, 1, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0, saveData)
         pm.produceSingleMoireAtomGLineCutInTPlot(GLineCutInTofdands[dIndexToPlot,sIndexToPlot], TVals, theta, 0)
         pm.produceMuofTPlot(TVals, muOfTVector)
     if nu ==4:
-        pm.produceSingleMoireAtomGLineCutInTPlot(interactionIndex[dIndexToPlot,sIndexToPlot], TVals, theta, 0)
-        GLineCutInTofdands, GLineCutInTofdands_s, GLineCutInTofdands_a = met.computeLineCutInT(material, theta, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0)
-
+        GLineCutInTofdands = met.computeLineCutInT(material, theta, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0, numShellsForGammaofN, saveData)
+        print('shape:', np.shape(GLineCutInTofdands))
+        for dIndex in range(numdVals):
+            pm.produceSingleMoireAtomGLineCutInTPlot(GLineCutInTofdands[interactionIndex, dIndex, sIndexToPlot], TVals, theta, 0)
 if severalThetaCalculation == True:
     if nu == 2:
-        GLineCutInTofdandsTheta1, GLineCutInTofdandsFock1Theta1, GLineCutInTofdandsFock2Theta1, muOfTVector1 = met.computeLineCutInT(material, 1, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0)
-        GLineCutInTofdandsTheta2, GLineCutInTofdandsFock1Theta2, GLineCutInTofdandsFock2Theta2, muOfTVector2 = met.computeLineCutInT(material, 2, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0)
-        GLineCutInTofdandsTheta3, GLineCutInTofdandsFock1Theta3, GLineCutInTofdandsFock2Theta3, muOfTVector3 = met.computeLineCutInT(material, 3, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0)
-        GLineCutInTofdandsTheta4, GLineCutInTofdandsFock1Theta4, GLineCutInTofdandsFock2Theta4, muOfTVector4 = met.computeLineCutInT(material, 4, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0)
+        GLineCutInTofdandsTheta1, GLineCutInTofdandsFock1Theta1, GLineCutInTofdandsFock2Theta1, muOfTVector1 = met.computeLineCutInT(material, 1, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0, saveData)
+        GLineCutInTofdandsTheta2, GLineCutInTofdandsFock1Theta2, GLineCutInTofdandsFock2Theta2, muOfTVector2 = met.computeLineCutInT(material, 2, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0, saveData)
+        GLineCutInTofdandsTheta3, GLineCutInTofdandsFock1Theta3, GLineCutInTofdandsFock2Theta3, muOfTVector3 = met.computeLineCutInT(material, 3, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0, saveData)
+        GLineCutInTofdandsTheta4, GLineCutInTofdandsFock1Theta4, GLineCutInTofdandsFock2Theta4, muOfTVector4 = met.computeLineCutInT(material, 4, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0, saveData)
         for dIndex in range(numdVals):
             d = dVals[dIndex]
             pm.produceMultipleThetaMoireAtomGLineCutInTPlot(GLineCutInTofdandsTheta1[dIndex,sIndexToPlot], GLineCutInTofdandsFock1Theta1[dIndex,sIndexToPlot], GLineCutInTofdandsFock2Theta1[dIndex,sIndexToPlot], GLineCutInTofdandsTheta2[dIndex,sIndexToPlot], GLineCutInTofdandsFock1Theta2[dIndex,sIndexToPlot],  GLineCutInTofdandsFock2Theta2[dIndex,sIndexToPlot], GLineCutInTofdandsTheta3[dIndex,sIndexToPlot], GLineCutInTofdandsFock1Theta3[dIndex,sIndexToPlot], GLineCutInTofdandsFock2Theta3[dIndex,sIndexToPlot], GLineCutInTofdandsTheta4[dIndex,sIndexToPlot], GLineCutInTofdandsFock1Theta4[dIndex,sIndexToPlot], GLineCutInTofdandsFock2Theta4[dIndex,sIndexToPlot], TVals, d, N, numEStatesIncluded, nu)
         pm.produceMuofTPlot(TVals, muOfTVector1)
     if nu == 4:
-        GLineCutInTofdandsTheta1, GLineCutInTofdandsTheta1_s, GLineCutInTofdandsTheta1_a = met.computeLineCutInT(material, 1, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0)
-        GLineCutInTofdandsTheta2, GLineCutInTofdandsTheta2_s, GLineCutInTofdandsTheta2_a = met.computeLineCutInT(material, 2, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0)
-        GLineCutInTofdandsTheta3, GLineCutInTofdandsTheta3_s, GLineCutInTofdandsTheta3_a = met.computeLineCutInT(material, 3, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0)
-        GLineCutInTofdandsTheta4, GLineCutInTofdandsTheta4_s, GLineCutInTofdandsTheta4_a = met.computeLineCutInT(material, 4, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0)
+        GLineCutInTofdandsTheta1 = met.computeLineCutInT(material, 1, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0, numShellsForGammaofN, saveData)
+        #print('GLineCutInTofdandsTheta1:', GLineCutInTofdandsTheta1)
+        GLineCutInTofdandsTheta2 = met.computeLineCutInT(material, 2, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0, numShellsForGammaofN, saveData)
+        GLineCutInTofdandsTheta3 = met.computeLineCutInT(material, 3, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0, numShellsForGammaofN, saveData)
+        GLineCutInTofdandsTheta4 = met.computeLineCutInT(material, 4, nu, modStrengthFactor, N, numEStatesIncluded, TMin, TMax, numTVals, sMin, sMax, numsVals, dMin, dMax, numdVals, cutoff, muOfTPrecision, epsForED, epsForEnergyTransfer, epsilonEffD, Gamma0, numShellsForGammaofN, saveData)
         for dIndex in range(numdVals):
             d = dVals[dIndex]
-            pm.produceMultipleThetaMoireAtomGLineCutInTPlot(GLineCutInTofdandsTheta1[interactionIndex, dIndex,sIndexToPlot], GLineCutInTofdandsTheta1_s[interactionIndex,dIndex,sIndexToPlot], GLineCutInTofdandsTheta1_a[interactionIndex,dIndex,sIndexToPlot], GLineCutInTofdandsTheta2[interactionIndex,dIndex,sIndexToPlot], GLineCutInTofdandsTheta2_s[interactionIndex,dIndex,sIndexToPlot],  GLineCutInTofdandsTheta2_a[interactionIndex,dIndex,sIndexToPlot], GLineCutInTofdandsTheta3[interactionIndex,dIndex,sIndexToPlot], GLineCutInTofdandsTheta3_s[interactionIndex,dIndex,sIndexToPlot], GLineCutInTofdandsTheta3_a[interactionIndex,dIndex,sIndexToPlot], GLineCutInTofdandsTheta4[interactionIndex,dIndex,sIndexToPlot], GLineCutInTofdandsTheta4_s[interactionIndex,dIndex,sIndexToPlot], GLineCutInTofdandsTheta4_a[interactionIndex,dIndex,sIndexToPlot], TVals, d, N, numEStatesIncluded, nu, interactionIndex)
+            pm.produceMultipleThetaMoireAtomGLineCutInTPlot(GLineCutInTofdandsTheta1[interactionIndex, dIndex, sIndexToPlot], GLineCutInTofdandsTheta2[interactionIndex,dIndex,sIndexToPlot], GLineCutInTofdandsTheta3[interactionIndex,dIndex,sIndexToPlot], GLineCutInTofdandsTheta4[interactionIndex,dIndex,sIndexToPlot], TVals, d, N, numEStatesIncluded, nu, interactionIndex)
+# %%
+
 # %%

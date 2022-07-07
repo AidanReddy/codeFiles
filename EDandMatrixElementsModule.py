@@ -1,5 +1,5 @@
 from numpy import *
-import scipy.linalg as la
+import scipy.linalg as linalg
 import numba
 import scipy
 from scipy.special import gamma, hyperu, assoc_laguerre
@@ -11,88 +11,51 @@ import mpmath as mp
 """
 Note: numba is not compatible mpmath, so I cannot use numba on the matrix element calculations that use the hyperu function from mpmath.
 """
+
 hbar = 6.582 * 10**(-13) # meV * s
-electronMass = 5.856301 * 10**(-29) # meV *(second/Å)
+electronMass = 5.68563 * 10**(-29) # meV *(second/Å)
 eSquaredOvere0 =  14400 #meV * angstrom #CGS
 
 def oneBody_basis(N, omgh):
     numBasisStates = int((N+1)*(N+2)/2)
+    stateList = zeros((numBasisStates,2))
     npList = zeros(numBasisStates)
     nmList = zeros(numBasisStates)
     index = 0
     for np in range(N+1):
         for nm in range(N-np+1):
-            npList[index] = np
-            nmList[index] = nm
+            stateList[index] = np.array([np,nm])
             index += 1
-    E0 = (npList+nmList)*omgh
-    ind = argsort(E0)
-    E0 = E0[ind] + omgh
-    npList = npList[ind]
-    nmList = nmList[ind]
-    return(E0,npList.astype(int),nmList.astype(int))
+    E0 = (sum(stateList, axis=1) + 1)*omgh
+    ind_sort = argsort(E0)
+    E0_sorted = E0[ind_sort]
+    stateList_sorted=stateList[ind_sort]
+    return(E0,stateList_sorted.astype(int))
 
-def nonint_basis_symmetric(N, omgh):
+def nonint_basis(N, omgh):
     numBasisStates = int((1/24)*((N+1)*(N+2)*(N+3)*(N+4))) # the number of 2 particle 2DIHO states at or below the the N^th noninteracting energy level
     #First construct a basis with size (nhp*nhm)**2, then pick out Ncut lowest states (Ncut is the number of two-particle basis states we retain)
-    nRpList = zeros(numBasisStates)
-    nRmList = zeros(numBasisStates)
-    nrpList = zeros(numBasisStates)
-    nrmList = zeros(numBasisStates)
+    stateList = zeros((numBasisStates, 4)) # rows are states, columns are (nRp, nRm, nrp, nrm)
     index = 0
     for nRp in range(N+1):
         for nRm in range(N-nRp+1):
             for nrp in range(N-nRp-nRm+1):
                 for nrm in range(N-nRp-nRm-nrp+1):
-                    nRpList[index] = nRp
-                    nRmList[index] = nRm
-                    nrpList[index] = nrp
-                    nrmList[index] = nrm
+                    stateList[index] = array((nRp, nRm, nrp, nrm))
                     index += 1
-    ind = abs(nrpList-nrmList)%2 == 0
-    nRpList = nRpList[ind]
-    nRmList = nRmList[ind]
-    nrpList = nrpList[ind]
-    nrmList = nrmList[ind]
-    E0 = (nRpList+nRmList+nrpList+nrmList)*omgh
-    ind = argsort(E0)
-    E0_s = E0[ind] + 2*omgh
-    nRpList_s = nRpList[ind]
-    nRmList_s = nRmList[ind]
-    nrpList_s = nrpList[ind]
-    nrmList_s = nrmList[ind]
-    return(E0_s,nRpList_s.astype(int),nRmList_s.astype(int),nrpList_s.astype(int),nrmList_s.astype(int))
-
-def nonint_basis_antisymmetric(N, omgh):
-    numBasisStates = int((1/24)*((N+1)*(N+2)*(N+3)*(N+4))) # the number of 2 particle 2DIHO states at or below the the N^th noninteracting energy level
-    #First construct a basis with size (nhp*nhm)**2, then pick out Ncut lowest states (Ncut is the number of two-particle basis states we retain states)
-    nRpList = zeros(numBasisStates)
-    nRmList = zeros(numBasisStates)
-    nrpList = zeros(numBasisStates)
-    nrmList = zeros(numBasisStates)
-    index = 0
-    for nRp in range(N+1):
-        for nRm in range(N-nRp+1):
-            for nrp in range(N-nRp-nRm+1):
-                for nrm in range(N-nRp-nRm-nrp+1):
-                    nRpList[index] = nRp
-                    nRmList[index] = nRm
-                    nrpList[index] = nrp
-                    nrmList[index] = nrm
-                    index += 1
-    ind = abs(nrpList-nrmList)%2 == 1
-    nRpList = nRpList[ind]
-    nRmList = nRmList[ind]
-    nrpList = nrpList[ind]
-    nrmList = nrmList[ind]
-    E0 = (nRpList+nRmList+nrpList+nrmList)*omgh
-    ind = argsort(E0)
-    E0_a = E0[ind] + 2*omgh
-    nRpList_a = nRpList[ind]
-    nRmList_a = nRmList[ind]
-    nrpList_a = nrpList[ind]
-    nrmList_a = nrmList[ind]
-    return(E0_a,nRpList_a.astype(int),nRmList_a.astype(int),nrpList_a.astype(int),nrmList_a.astype(int))
+    E0 = (sum(stateList, axis=1)+2)*omgh
+    ind_sort = argsort(E0)
+    E0_sorted = E0[ind_sort]
+    stateList_sorted = stateList[ind_sort]
+    nrpList = stateList_sorted[:,2]
+    nrmList = stateList_sorted[:,3]
+    ind_s = abs(nrpList-nrmList)%2 == 0 #_s is symmetric, _a is antisymmetric
+    E0_s = E0_sorted[ind_s]
+    stateList_s = stateList_sorted[ind_s]
+    ind_a = abs(nrpList-nrmList)%2 == 1 #_s is symmetric, _a is antisymmetric
+    E0_a = E0_sorted[ind_a]
+    stateList_a = stateList_sorted[ind_a]
+    return(E0_sorted, stateList_sorted.astype(int),E0_s, stateList_s.astype(int), E0_a, stateList_a.astype(int))
 
 @numba.jit()
 def factorial(n): #a factorial function with floating number output, to avoid numerical issue
@@ -164,8 +127,6 @@ def Coul_hh_2body_individualQuantumNumbers_verticalSeparation(omgh,dTilde,n1pi,n
     # note that ((-1)**(deltaNr/2)) = (1j)**(deltaNr) since deltaNr is necessarily even. I just code it here as the LHS of this equation to ensure that it is real for the diagonalization code.
     Vij = S1p*2*E0*exp((1j*pi/2)*(deltaNTot))*(-1)**(abs(deltaN2))*((-1)**abs(n1pj+n1mj+n2pj+n2mj))*sqrt(factorial(n1pi)*factorial(n1pj)*factorial(n1mi)*factorial(n1mj)*factorial(n2pi)*factorial(n2pj)*factorial(n2mi)*factorial(n2mj))
     return Vij
-
-
 
 @numba.jit()
 def Coul_hh_2body_individualQuantumNumbers_noSeparation(omgh, n1pi,n1mi,n2pi,n2mi,n1pj,n1mj,n2pj,n2mj, mStar,dielectricConstant): #this is for different quantum dots each with one hole
@@ -394,11 +355,12 @@ def Coul_hh_4body_noSeparation(omgh,nRpAi,nRmAi,nrpAi,nrmAi,nRpAj,nRmAj,nrpAj,nr
     V = SRpA*2**(7/2)*E0*(-1)**(abs(deltaNRB+nRpAj+nRmAj+nrpAj+nrmAj+nRpBj+nRmBj+nrmBj+nrpBj))*1j**(abs(deltaNRB+deltaNRA+deltaNrB+deltaNrA))*sqrt(factorial(nrpAi)*factorial(nrpAj)*factorial(nrmAi)*factorial(nrmAj)*factorial(nrpBi)*factorial(nrpBj)*factorial(nrmBi)*factorial(nrmBj))
     return(V)
 
-
-
 @numba.jit()
-def Coul_mat_hh(omgh,basis,mStar,dielectricConstant):
-    E0,nRp,nRm,nrp,nrm = basis
+def Coul_mat_hh(omgh,states,mStar,dielectricConstant):
+    nRp = states[:,0]
+    nRm = states[:,1]
+    nrp = states[:,2]
+    nrm = states[:,3]
     N = len(nRp)
     V = zeros((N,N))
     for i in range(N):
@@ -419,93 +381,117 @@ def Coul_mat_hh(omgh,basis,mStar,dielectricConstant):
             V[j,i] = Vij
     return V
 
-def ED_hh(basis_s, basis_a, omgh, mStar,dielectricConstant):
+def ED_hh(E0_s, E0_a, stateList_s, stateList_a, omgh, mStar,dielectricConstant):
     #Given a symmetric basis, diagonalize both in the symmetric basis and the corresponding antisymmetric basis
-    E0_s,nRp_s,nRm_s,nrp_s,nrm_s = basis_s
-    E0_a,nRp_a,nRm_a,nrp_a,nrm_a = basis_a
     Ns = len(E0_s) #number of direct product states that will contributed to the symmetrized basis
     Es_s = zeros(Ns) #energy eigenvalues in the symmetric basis
     evecs_s = zeros((Ns,Ns)) #eigenvectors
     Na = len(E0_a)
     Es_a = zeros(Na)
     evecs_a = zeros((Na,Na))
+    nRp_s = stateList_s[:,0]
+    nRm_s = stateList_s[:,1]
+    nrp_s = stateList_s[:,2]
+    nrm_s = stateList_s[:,3]
+    nRp_a = stateList_a[:,0]
+    nRm_a = stateList_a[:,1]
+    nrp_a = stateList_a[:,2]
+    nrm_a = stateList_a[:,3]
     ls = nRp_s+nrp_s-nRm_s-nrm_s #angular momentum. Aidan: once again, a 1d array whose i^th entry is the angular momentum of the i^th state
-    ls_a = nRp_a+nrp_a-nRm_a-nrm_a
+    la = nRp_a+nrp_a-nRm_a-nrm_a
     for l in range(min(ls),max(ls)+1): #diagonalize the block with angular momentum l
         ind_ls = (ls==l) #a 1d array of True/False depending on whether the correpsonding entry in ls=l
-        ind_la = (ls_a==l)
-        Nl_s = sum(ind_ls) # number of states in the symmetricCoul_mat_hh direct product basis whose angular momenta = l
-        Nl_a = sum(ind_la)
-        if Nl_s>0:
+        ind_la = (la==l)
+        Nls = sum(ind_ls) # number of states in the symmetricCoul_mat_hh direct product basis whose angular momenta = l
+        Nla = sum(ind_la)
+        if Nls>0:
             E0_ls = E0_s[ind_ls]
             Ham_ls = diag(E0_ls) #noninteracting Hamiltonian
-            nRm_ls = nRm_s[ind_ls]
-            nRp_ls = nRp_s[ind_ls]
-            nrm_ls = nrm_s[ind_ls]
-            nrp_ls = nrp_s[ind_ls]
-            basis_ls = (E0_ls,nRp_ls,nRm_ls,nrp_ls,nrm_ls)
-            Vhh_ls = Coul_mat_hh(omgh,basis_ls,mStar,dielectricConstant)
+            states_ls = stateList_s[ind_ls]
+            Vhh_ls = Coul_mat_hh(omgh,states_ls,mStar,dielectricConstant)
             Ham_ls += Vhh_ls #full Hamiltonian
-            energies,evs = la.eigh(Ham_ls)
+            energies,evs = linalg.eigh(Ham_ls)
             Es_s[ind_ls] = energies
             evecs_s[ix_(ind_ls,ind_ls)] = evs #the columns of evecs_s are the eigenvectors
-        if Nl_a>0:
+        if Nla>0:
             E0_la = E0_a[ind_la]
             Ham_la = diag(E0_la)
-            nRp_la = nRp_a[ind_la]
-            nRm_la = nRm_a[ind_la]
-            nrp_la = nrp_a[ind_la]
-            nrm_la = nrm_a[ind_la]
-            basis_la = (E0_la,nRp_la,nRm_la,nrp_la,nrm_la)
-            Ham_la += Coul_mat_hh(omgh,basis_la,mStar,dielectricConstant)
-            energies,evs = la.eigh(Ham_la)
+            states_la = stateList_a[ind_la]
+            Ham_la += Coul_mat_hh(omgh,states_la, mStar,dielectricConstant)
+            energies,evs = linalg.eigh(Ham_la)
             Es_a[ind_la] = energies
             evecs_a[ix_(ind_la,ind_la)] = evs
-    ind = argsort(Es_s) #sort by energy
-    Es_s = Es_s[ind]
-    evecs_s = evecs_s[:,ind]
-    ls_s = ls[ind]
-    ind = argsort(Es_a)
-    Es_a = Es_a[ind]
-    evecs_a = evecs_a[:,ind]
-    ls_a = ls_a[ind]
-    return Es_s, evecs_s, Es_a, evecs_a
+    ind_s = argsort(Es_s) #sort by energy
+    Es_s = Es_s[ind_s]
+    evecs_s = evecs_s[:,ind_s]
+    ls = ls[ind_s]
+    ind_a = argsort(Es_a)
+    Es_a = Es_a[ind_a]
+    evecs_a = evecs_a[:,ind_a]
+    la = la[ind_a]
+    Es_unsorted = concatenate((Es_s,Es_a))
+    ind_sort = argsort(Es_unsorted)
+    Es = Es_unsorted[ind_sort]
+    parityList = concatenate((zeros(Ns), ones(Na)))[ind_sort]
+    return Es, Es_s, evecs_s, Es_a, evecs_a, parityList.astype(int)
 
-#function to calculate flip flop Coulomb interaction between s=two atoms. Flip flop means that the atoms switch states, i.e. <eigenstate beta|<eigenstate alpha|V|eigenstate alpha>|eigenstate beta>. In other words, only two unique eigenstates involved, as opposed to four.
 #@numba.jit()
-def Coul_4body_estateestate(dTilde, sTilde, eigenstateAiIndex, eigenstateAjIndex, eigenstateBiIndex, eigenstateBjIndex, cutoff, omgh, basisStatesMatrix, evecs, mStar,dielectricConstant):
+def Coul_4body_estateestate(dTilde, sTilde, eigenstateAiIndex, eigenstateAjIndex, eigenstateBiIndex, eigenstateBjIndex, cutoff, omgh, parityList, basisStates_s, basisStates_a, evecs_s, evecs_a, mStar,dielectricConstant):
     V = 0
-    numBasisStates = shape(basisStatesMatrix)[1]
-    eigenstateAi = evecs[:, eigenstateAiIndex]
-    eigenstateAj = evecs[:, eigenstateAjIndex]
-    eigenstateBi= evecs[:, eigenstateBiIndex]
-    eigenstateBj= evecs[:, eigenstateBjIndex]
-    for basisStateAiIndex in range(numBasisStates):
-        basisStateAi = basisStatesMatrix[:, basisStateAiIndex]
+    # the issues is that I have a list of all the energy eigenvalues Es, but separates symmetric and antisymmetric evec arrays. So, I need a way to map from my energy eigenstateIndex to its corresponding index in either evec_s or evec_a
+    collectiveEStateIndexToAsymIndexMap = cumsum(parityList).astype(int)
+    collectiveEStateIndexToSymIndexMap = abs(cumsum(-(parityList-1))).astype(int)
+    collectiveEStateIndexToSymAndAsymIndexMap = [collectiveEStateIndexToSymIndexMap, collectiveEStateIndexToAsymIndexMap] # this guy's first column maps Es to evecs_s and its second column maps Es to evecs_a
+    AiParity = parityList[eigenstateAiIndex]
+    AjParity = parityList[eigenstateAjIndex]
+    BiParity = parityList[eigenstateBiIndex]
+    BjParity = parityList[eigenstateBjIndex]
+    # we have the indices of the eigenstates with respect to Es. Now we want their proper indices, which are the indices within the list of states of their respective exchange symmetry
+    eigenstateAiIndexProper = collectiveEStateIndexToSymAndAsymIndexMap[AiParity][eigenstateAiIndex]
+    eigenstateAjIndexProper = collectiveEStateIndexToSymAndAsymIndexMap[AjParity][eigenstateAjIndex]
+    eigenstateBiIndexProper = collectiveEStateIndexToSymAndAsymIndexMap[BiParity][eigenstateBiIndex]
+    eigenstateBjIndexProper = collectiveEStateIndexToSymAndAsymIndexMap[BjParity][eigenstateBjIndex]
+    evecs_stacked = [evecs_s, evecs_a]
+    basisStates_stacked = [basisStates_s, basisStates_a]
+    numBasisStates_stacked = [shape(basisStates_s)[0], shape(basisStates_a)[0]]
+    eigenstateAi = evecs_stacked[AiParity][:, eigenstateAiIndexProper]
+    basisStatesAi = basisStates_stacked[AiParity]
+    numBasisStatesAi=numBasisStates_stacked[AiParity]
+    eigenstateAj = evecs_stacked[AjParity][:, eigenstateAjIndexProper]
+    basisStatesAj = basisStates_stacked[AjParity]
+    numBasisStatesAj=numBasisStates_stacked[AjParity]
+    eigenstateBi = evecs_stacked[BiParity][:, eigenstateBiIndexProper]
+    basisStatesBi = basisStates_stacked[BiParity]
+    numBasisStatesBi=numBasisStates_stacked[BiParity]
+    eigenstateBj = evecs_stacked[BjParity][:, eigenstateBjIndexProper]
+    basisStatesBj = basisStates_stacked[BjParity]
+    numBasisStatesBj=numBasisStates_stacked[BjParity]
+    for basisStateAiIndex in range(numBasisStatesAi):
+        basisStateAi = basisStatesAi[basisStateAiIndex]
         basisStateAiCoefficient = eigenstateAi[basisStateAiIndex]
         if basisStateAiCoefficient > cutoff:
             nRpAi=basisStateAi[0]
             nRmAi=basisStateAi[1]
             nrpAi=basisStateAi[2]
             nrmAi=basisStateAi[3]
-            for basisStateAjIndex in range(numBasisStates):
-                basisStateAj = basisStatesMatrix[:, basisStateAjIndex]
+            for basisStateAjIndex in range(numBasisStatesAj):
+                basisStateAj = basisStatesAj[basisStateAjIndex]
                 basisStateAjCoefficient = eigenstateAj[basisStateAjIndex]
                 if basisStateAjCoefficient > cutoff:
                     nRpAj=basisStateAj[0]
                     nRmAj=basisStateAj[1]
                     nrpAj=basisStateAj[2]
                     nrmAj=basisStateAj[3]
-                    for basisStateBiIndex in range(numBasisStates):
-                        basisStateBi = basisStatesMatrix[:, basisStateBiIndex]
+                    for basisStateBiIndex in range(numBasisStatesBi):
+                        basisStateBi = basisStatesBi[basisStateBiIndex]
                         basisStateBiCoefficient = eigenstateBi[basisStateBiIndex]
                         if basisStateBiCoefficient > cutoff:
                             nRpBi=basisStateBi[0]
                             nRmBi=basisStateBi[1]
                             nrpBi=basisStateBi[2]
                             nrmBi=basisStateBi[3]
-                            for basisStateBjIndex in range(numBasisStates):
-                                basisStateBj = basisStatesMatrix[:, basisStateBjIndex]
+                            for basisStateBjIndex in range(numBasisStatesBj):
+                                basisStateBj = basisStatesBj[basisStateBjIndex]
                                 basisStateBjCoefficient = eigenstateBj[basisStateBjIndex]
                                 if basisStateBjCoefficient > cutoff:
                                     nRpBj=basisStateBj[0]
@@ -513,7 +499,8 @@ def Coul_4body_estateestate(dTilde, sTilde, eigenstateAiIndex, eigenstateAjIndex
                                     nrpBj=basisStateBj[2]
                                     nrmBj=basisStateBj[3]
                                     amplitude = basisStateAiCoefficient * basisStateBiCoefficient * conj(basisStateAjCoefficient) * conj(basisStateBjCoefficient)
-                                    V+=amplitude*Coul_hh_4body_generalSeparation(dTilde,sTilde,omgh,nRpAi,nRmAi,nrpAi,nrmAi,nRpAj,nRmAj,nrpAj,nrmAj,nRpBi,nRmBi,nrpBi,nrmBi,nRpBj,nRmBj,nrpBj,nrmBj,mStar,dielectricConstant)
+                                    matElt = Coul_hh_4body_generalSeparation(dTilde,sTilde,omgh,nRpAi,nRmAi,nrpAi,nrmAi,nRpAj,nRmAj,nrpAj,nrmAj,nRpBi,nRmBi,nrpBi,nrmBi,nRpBj,nRmBj,nrpBj,nrmBj,mStar,dielectricConstant)
+                                    V+=amplitude*matElt
     return(V)
 
 """
